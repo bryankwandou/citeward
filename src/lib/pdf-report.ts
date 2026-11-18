@@ -30,9 +30,9 @@ export function generateAuditPdfBlob(params: {
     y -= step;
   };
 
-  pushLine('CITEWARD OPEN-SOURCE SIMILARITY & STYLOMETRY RECEIPT', 14, true, 20);
+  pushLine('CITEWARD TURNITIN-CALIBRATED ORIGINALITY & DIGITAL RECEIPT', 13.5, true, 20);
   pushLine(
-    `Generated: ${audit.analyzedAt} | Engine: Winnowing (k=15, w=10) + 3-Gram MinHash`,
+    `Generated: ${audit.analyzedAt} | Engine: Rabin-Karp Winnowing (k=15, w=10) + 3-Gram MinHash`,
     9,
     false,
     18
@@ -42,46 +42,62 @@ export function generateAuditPdfBlob(params: {
   pushLine(`Author / Context: ${author.slice(0, 72)}`, 10, false, 15);
   pushLine(`Normalized SHA-256: ${audit.documentHashSha256}`, 9, false, 20);
 
-  pushLine('1. HEADLINE INTEGRITY TELEMETRY', 11, true, 16);
+  pushLine('1. TURNITIN-EQUIVALENT SIMILARITY & AI WRITING SUMMARY', 11, true, 16);
+  const roundedSim =
+    typeof audit.roundedSimilarityPercent === 'number'
+      ? audit.roundedSimilarityPercent
+      : audit.matchedWords === 0
+      ? 0
+      : Math.max(1, Math.round(audit.overallSimilarityPercent));
   pushLine(
-    `   Overall Similarity Index: ${audit.overallSimilarityPercent}% (${audit.matchedWords} / ${audit.evaluableWords} evaluable words)`,
+    `   Similarity Index:     ${roundedSim}% (Exact: ${audit.overallSimilarityPercent}% | ${audit.matchedWords} / ${audit.evaluableWords} words)`,
     10,
     true,
     14
   );
   pushLine(
-    `   Unfiltered Raw Overlap:   ${audit.rawSimilarityPercent}% | Total Words: ${audit.totalWords} | Winnow Fingerprints: ${audit.fingerprintCount}`,
+    `   Source Channels:      Internet ${audit.internetPercent}% | Publications ${audit.publicationsPercent}% | Student Papers ${audit.studentPapersPercent}%`,
     9.5,
     false,
     14
   );
   pushLine(
-    `   Category Breakdown:       Publications ${audit.publicationsPercent}% | Internet ${audit.internetPercent}% | Student Papers ${audit.studentPapersPercent}%`,
-    9.5,
+    `   Exclusions Applied:   Quotes=${audit.exclusions.excludeQuotes ? 'EXCLUDED' : 'INCLUDED'} (${audit.quotedWords}w) | Bib=${audit.exclusions.excludeBibliography ? 'EXCLUDED' : 'INCLUDED'} (${audit.bibliographyWords}w) | MinWords=${audit.exclusions.minWordMatch}w | MinSource=${audit.exclusions.minPercentMatch ?? 0}%`,
+    8.5,
     false,
     14
   );
+  const aiInd = audit.stylometry.turnitinAiIndicator || `${Math.round(audit.stylometry.overallAiPercent)}%`;
   pushLine(
-    `   Stylometric Synthetic %:  ${audit.stylometry.overallAiPercent}% | Burstiness CV: ${audit.stylometry.burstinessScore} | MATTR-50: ${audit.stylometry.mattr50}`,
+    `   AI Writing Indicator: ${aiInd} (Est. ${audit.stylometry.overallAiPercent}% | ${audit.stylometry.qualifyingAiWords ?? audit.totalWords}w prose) | Burstiness CV: ${audit.stylometry.burstinessScore}`,
     9.5,
     false,
     20
   );
 
-  pushLine('2. RANKED SOURCE MATCHES', 11, true, 16);
+  pushLine('2. PRIMARY SOURCES MATCH OVERVIEW', 11, true, 16);
   if (audit.sources.length === 0) {
     pushLine('   No overlapping sources exceeded the active exclusion threshold.', 9.5, false, 18);
   } else {
     for (const s of audit.sources.slice(0, 10)) {
       if (y < 110) break;
+      const pPct =
+        typeof s.primarySimilarityPercent === 'number'
+          ? s.primarySimilarityPercent
+          : s.similarityPercent;
+      const pWords =
+        typeof s.primaryMatchedWords === 'number'
+          ? s.primaryMatchedWords
+          : s.matchedWords;
+      const pRounded = pWords === 0 ? 0 : Math.max(1, Math.round(pPct));
       pushLine(
-        `   #${s.rank} [${s.similarityPercent}% | ${s.matchedWords} words] ${s.source.title.slice(0, 62)}`,
+        `   #${s.rank} [${pRounded}% (${pPct}%) | ${pWords}w primary] ${s.source.title.slice(0, 56)}`,
         9.5,
         true,
         13
       );
       pushLine(
-        `       ${s.source.authors} (${s.source.year}) - ${s.source.repository} - ${s.source.url.slice(0, 58)}`,
+        `       ${s.source.authors} (${s.source.year}) - ${s.source.repository} - ${s.source.url.slice(0, 56)}`,
         8.5,
         false,
         15
@@ -90,13 +106,13 @@ export function generateAuditPdfBlob(params: {
   }
 
   y -= 6;
-  pushLine('3. SOLANA DEVNET PRIOR-ART & INTEGRITY ATTESTATION', 11, true, 16);
+  pushLine('3. VERIFIABLE DIGITAL RECEIPT & OPTIONAL TIMESTAMP', 11, true, 16);
   if (solanaSignature) {
     pushLine(`   Confirmed SPL Memo Signature: ${solanaSignature}`, 9, true, 14);
     pushLine(`   Solscan Devnet URL: ${solanaExplorerUrl || ''}`, 8.5, false, 14);
   } else {
     pushLine(
-      '   Not yet anchored on-chain in this session. Use Tab 3 (Solana Devnet Seal) to anchor.',
+      '   Inspect SHA-256 digest or anchor optional Devnet receipt at https://citeward.vercel.app/verify',
       9,
       false,
       14

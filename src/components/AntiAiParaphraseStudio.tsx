@@ -43,7 +43,7 @@ export function AntiAiParaphraseStudio() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const res = await fetch('/api/parse-document', {
+      const res = await fetch('/api/parse-document?mode=reference', {
         method: 'POST',
         body: formData,
       });
