@@ -35,8 +35,13 @@ const srcFiles = walkFiles(path.join(process.cwd(), 'src'));
 let violations = 0;
 
 for (const file of srcFiles) {
-  // similarity-engine.ts intentionally lists formulaic markers to detect them in synthetic essays
-  if (file.endsWith('similarity-engine.ts')) continue;
+  // similarity-engine.ts and forensics-and-ecosystem.ts list formulaic markers to detect and strip them
+  if (
+    file.endsWith('similarity-engine.ts') ||
+    file.endsWith('forensics-and-ecosystem.ts')
+  ) {
+    continue;
+  }
   const content = fs.readFileSync(file, 'utf8');
   for (const pat of BANNED_PATTERNS) {
     if (pat.test(content)) {

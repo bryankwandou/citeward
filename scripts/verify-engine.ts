@@ -3,6 +3,11 @@ import {
   computeWinnowFingerprints,
   runManuscriptAudit,
 } from '../src/lib/similarity-engine';
+import {
+  analyzeAiTells,
+  humanizeAndParaphraseDeterministically,
+  scanDocumentManipulations,
+} from '../src/lib/forensics-and-ecosystem';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -61,6 +66,29 @@ async function main() {
   );
   console.log(
     `[PASS] Stylometric Separation: Synthetic AI=${syntheticAudit.stylometry.overallAiPercent}% (CV=${syntheticAudit.stylometry.burstinessScore}) vs Human Empirical AI=${humanAudit.stylometry.overallAiPercent}% (CV=${humanAudit.stylometry.burstinessScore})`
+  );
+
+  console.log('=== 4. Verifying Homoglyph Trap & Natural Human Paraphraser (<5% Sim) ===');
+  const spoofed = 'Digit\u0430l d\u043Ecuments\u200B \u0430re copied.';
+  const manip = scanDocumentManipulations(spoofed);
+  assert(
+    manip.homoglyphCount === 3 && manip.zeroWidthCount === 1,
+    `Expected 3 homoglyphs and 1 zero-width char, got ${manip.homoglyphCount} and ${manip.zeroWidthCount}`
+  );
+
+  const rewritten = humanizeAndParaphraseDeterministically(SAMPLE_MANUSCRIPTS[1].text);
+  const rewrittenTells = analyzeAiTells(rewritten);
+  const rewrittenAudit = runManuscriptAudit(rewritten);
+  assert(
+    rewrittenTells.tells.length === 0,
+    `Expected 0 AI tells after deterministic humanization, got ${rewrittenTells.tells.length}`
+  );
+  assert(
+    rewrittenAudit.overallSimilarityPercent < 5.0,
+    `Expected < 5.0% similarity after paraphrase, got ${rewrittenAudit.overallSimilarityPercent}%`
+  );
+  console.log(
+    `[PASS] Homoglyph Trap & Human Paraphraser: 0 AI tells, ${rewrittenAudit.overallSimilarityPercent}% similarity (<5% SLA), Burstiness CV=${rewrittenAudit.stylometry.burstinessScore}`
   );
 }
 

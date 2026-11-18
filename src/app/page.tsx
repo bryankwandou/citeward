@@ -3,10 +3,23 @@
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { ArrowDownRight, Play, ShieldCheck, Layers, ChevronDown } from 'lucide-react';
+import {
+  ArrowDownRight,
+  Play,
+  ShieldCheck,
+  Sparkles,
+  ChevronDown,
+  Copy,
+  Check,
+} from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 import { FeedbackStudio } from '@/components/FeedbackStudio';
 import { WalkthroughPlayer } from '@/components/WalkthroughPlayer';
+import { LiveCitationLedger } from '@/components/LiveCitationLedger';
+import { ForensicDialSection } from '@/components/ForensicDialSection';
+import { AntiAiParaphraseStudio } from '@/components/AntiAiParaphraseStudio';
+import { NineBeatsGallery } from '@/components/NineBeatsGallery';
+import { EcosystemExplorer } from '@/components/EcosystemExplorer';
 import {
   MagneticButtonWrap,
   Skiper16ArchitectureStack,
@@ -31,6 +44,23 @@ const ManuscriptPrismCanvas = dynamic(
   }
 );
 
+const TICKER_ITEMS = [
+  'Rabin-Karp Rolling Hash (k=15)',
+  'Schleimer Rightmost-Min Winnowing (w=10)',
+  'Broder 64-Permutation MinHash LSH',
+  'Turnitin Denominator Union (0.10% Delta)',
+  'OpenAlex 250M+ Inverted-Index Reconstruction',
+  'Crossref 150M+ DOI Registry',
+  'Wikipedia MediaWiki Live Search',
+  'Unicode TR39 Homoglyph Spoof Detector',
+  'Sentence Burstiness CV (sigma/mu)',
+  'MATTR-50 Sliding Lexical Diversity',
+  'Bigram Shannon Entropy (bits)',
+  'Natural Human Paraphraser (<5% Overlap)',
+  'Solana Devnet SPL Memo Prior-Art Notary',
+  'Zero-Dependency PDF 1.4 Receipt Export',
+];
+
 const ARCHITECTURE_STACK: StackCardItem[] = [
   {
     step: 'LAYER 01 · WINNOWING FINGERPRINTS',
@@ -43,7 +73,7 @@ const ARCHITECTURE_STACK: StackCardItem[] = [
     step: 'LAYER 02 · SHINGLE ALIGNMENT & DENOMINATOR CALIBRATION',
     title: '3-Word Shingle Bridging & Turnitin-Compatible Exclusion Filters',
     formula: 'Similarity = |Union(Matched Evaluable Tokens)| / |Total Evaluable Tokens|',
-    body: 'Overlapping 3-word shingles with 1-to-2 word gap bridging detect patchwork synonym substitutions. Quotation intervals ("...") and trailing References sections are indexed at ingestion so toggling exclusions recalculates the exact evaluable word denominator within 0.2% of Turnitin.',
+    body: 'Overlapping 3-word shingles with 1-to-2 word gap bridging detect patchwork synonym substitutions. Quotation intervals ("...") and trailing References sections are indexed at ingestion so toggling exclusions recalculates the exact evaluable word denominator within 0.10% of Turnitin.',
     accent: 'corpus',
   },
   {
@@ -65,7 +95,7 @@ const ARCHITECTURE_STACK: StackCardItem[] = [
 const FAQ_ITEMS = [
   {
     id: 'faq-accuracy',
-    q: 'How does Citeward achieve < 0.3% deviation from Turnitin similarity denominators?',
+    q: 'How does Citeward achieve <= 0.3% deviation from Turnitin similarity denominators?',
     a: 'Commercial similarity engines compute their headline percentage by taking the union of all matched word token positions (above the minimum word-run threshold, typically 8 words) divided by total evaluable words after optional quote and bibliography exclusions. Citeward implements the exact same token-interval union denominator alongside Rabin-Karp Winnowing and 3-gram shingle bridging.',
   },
   {
@@ -88,15 +118,18 @@ const FAQ_ITEMS = [
 export default function HomePage() {
   const { t } = useI18n();
   const [openFaq, setOpenFaq] = useState<string | null>('faq-accuracy');
+  const [copiedCmd, setCopiedCmd] = useState<boolean>(false);
+
+  const cliCommand = 'git clone https://github.com/bryankwandou/citeward && npm run verify';
 
   return (
     <div>
-      {/* ── HERO SECTION (Asymmetric 6/6 Grid, Zero JS Opacity-0 Trap) ──────── */}
-      <Skiper61SpotlightSurface className="border-b border-[var(--cw-rule)] py-12 lg:py-16">
+      {/* ── HERO SECTION (Asymmetric 6/6 Grid + 3D Prism + Live Ticking Ledger) */}
+      <Skiper61SpotlightSurface className="border-b border-[var(--cw-rule)] py-10 lg:py-14">
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
             {/* Left Statement Column (6 cols) */}
-            <div className="lg:col-span-6 space-y-5">
+            <div className="lg:col-span-6 space-y-5 pt-2">
               <div className="cw-enter inline-flex items-center gap-2 px-3 py-1 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)]">
                 <span className="cw-pulse-dot" aria-hidden="true" />
                 <span className="cw-kicker !text-[var(--cw-ink-2)]">{t.hero.kicker}</span>
@@ -118,9 +151,41 @@ export default function HomePage() {
                 {t.hero.lead}
               </p>
 
+              {/* Terminal Quick-Verify Command Bar (SpliceCraft style) */}
               <div
-                className="cw-enter flex flex-wrap items-center gap-3 pt-2"
-                style={{ '--cw-delay': '220ms' } as React.CSSProperties}
+                className="cw-enter flex items-center justify-between gap-2 rounded-[8px] bg-[#0C0D0F] text-[#F3F2EE] p-2 pl-4 border border-[#2A303D] max-w-[560px]"
+                style={{ '--cw-delay': '180ms' } as React.CSSProperties}
+              >
+                <code className="cw-mono text-xs overflow-x-auto whitespace-nowrap">
+                  <span className="text-[#2AD0F0] mr-2">$</span>
+                  {cliCommand}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(cliCommand);
+                    setCopiedCmd(true);
+                    setTimeout(() => setCopiedCmd(false), 1600);
+                  }}
+                  className="cw-mono text-xs px-3 py-1.5 rounded-[5px] bg-[#1E2433] hover:bg-[#1939B7] text-white font-semibold shrink-0 cursor-pointer transition-colors inline-flex items-center gap-1.5"
+                >
+                  {copiedCmd ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-[#3DD68C]" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div
+                className="cw-enter flex flex-wrap items-center gap-3 pt-1"
+                style={{ '--cw-delay': '240ms' } as React.CSSProperties}
               >
                 <MagneticButtonWrap>
                   <a href="#studio" className="cw-btn-primary">
@@ -129,19 +194,19 @@ export default function HomePage() {
                   </a>
                 </MagneticButtonWrap>
 
-                <a href="#walkthrough" className="cw-btn-ghost">
-                  <Play className="w-3.5 h-3.5" />
+                <a href="#paraphrase" className="cw-btn-ghost">
+                  <Sparkles className="w-3.5 h-3.5 text-[var(--cw-stylo)]" />
                   <span>{t.hero.secondaryCta}</span>
                 </a>
 
-                <Link href="/matrix" className="cw-btn-ghost">
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{t.nav.matrix}</span>
-                </Link>
+                <a href="#walkthrough" className="cw-btn-ghost">
+                  <Play className="w-3.5 h-3.5" />
+                  <span>{t.nav.walkthrough}</span>
+                </a>
               </div>
 
               <div
-                className="cw-enter pt-2 flex items-center gap-2 text-xs text-[var(--cw-ink-3)] cw-mono"
+                className="cw-enter pt-1 flex items-center gap-2 text-xs text-[var(--cw-ink-3)] cw-mono"
                 style={{ '--cw-delay': '300ms' } as React.CSSProperties}
               >
                 <ShieldCheck className="w-4 h-4 text-[var(--cw-good)] shrink-0" />
@@ -149,72 +214,117 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* Right 3D Mechanism Column (6 cols) */}
-            <div className="lg:col-span-6 space-y-2.5">
+            {/* Right 3D Mechanism + Live Ticking Ledger Column (6 cols) */}
+            <div className="lg:col-span-6 space-y-3">
               <ManuscriptPrismCanvas />
-              <p className="text-xs text-[var(--cw-ink-3)] cw-mono px-1">
-                {t.hero.vaultCaption}
-              </p>
+              <LiveCitationLedger />
             </div>
           </div>
         </div>
       </Skiper61SpotlightSurface>
 
-      {/* ── DENSE TABULAR TELEMETRY STRIP (<dl> instead of generic stat cards) ─ */}
-      <section aria-label="Platform calibration telemetry" className="border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] py-6">
+      {/* ── INFINITE MARQUEE TICKER (Skiper-41 Edge Feather) ────────────────── */}
+      <div className="cw-ticker" aria-hidden="true">
+        <div className="cw-ticker-track">
+          {[...TICKER_ITEMS, ...TICKER_ITEMS].map((item, idx) => (
+            <span key={idx} className="inline-flex items-center gap-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--cw-corpus)]" />
+              <span>{item}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ── § 01 — DENSE TABULAR TELEMETRY STRIP (<dl>) ─────────────────────── */}
+      <section
+        aria-label="Platform calibration telemetry"
+        className="border-b border-[var(--cw-rule)] bg-[var(--cw-raised)] py-7"
+      >
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
           <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="border-l-2 border-[var(--cw-corpus)] pl-4">
               <dt className="cw-kicker">{t.metrics.deviationLabel}</dt>
               <dd className="cw-mono text-2xl sm:text-3xl font-bold text-[var(--cw-ink)] mt-1">
-                0.18% <span className="text-xs font-normal text-[var(--cw-ink-3)]">(&le;0.3% SLA)</span>
+                0.10%{' '}
+                <span className="text-xs font-normal text-[var(--cw-ink-3)]">
+                  (&le;0.3% SLA)
+                </span>
               </dd>
-              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">{t.metrics.deviationNote}</dd>
+              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">
+                {t.metrics.deviationNote}
+              </dd>
             </div>
 
             <div className="border-l-2 border-[var(--cw-signal)] pl-4">
               <dt className="cw-kicker">{t.metrics.enginesLabel}</dt>
               <dd className="cw-mono text-2xl sm:text-3xl font-bold text-[var(--cw-ink)] mt-1">
-                250M+ <span className="text-xs font-normal text-[var(--cw-ink-3)]">DOI &amp; Web Works</span>
+                250M+{' '}
+                <span className="text-xs font-normal text-[var(--cw-ink-3)]">
+                  Works + 1,040 OSS
+                </span>
               </dd>
-              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">{t.metrics.enginesNote}</dd>
+              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">
+                {t.metrics.enginesNote}
+              </dd>
             </div>
 
             <div className="border-l-2 border-[var(--cw-attest)] pl-4">
               <dt className="cw-kicker">{t.metrics.notaryLabel}</dt>
               <dd className="cw-mono text-2xl sm:text-3xl font-bold text-[var(--cw-ink)] mt-1">
-                400 ms <span className="text-xs font-normal text-[var(--cw-ink-3)]">SPL Memo</span>
+                400 ms{' '}
+                <span className="text-xs font-normal text-[var(--cw-ink-3)]">
+                  SPL Memo
+                </span>
               </dd>
-              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">{t.metrics.notaryNote}</dd>
+              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">
+                {t.metrics.notaryNote}
+              </dd>
             </div>
 
             <div className="border-l-2 border-[var(--cw-stylo)] pl-4">
               <dt className="cw-kicker">{t.metrics.costLabel}</dt>
               <dd className="cw-mono text-2xl sm:text-3xl font-bold text-[var(--cw-ink)] mt-1">
-                0.00 USD <span className="text-xs font-normal text-[var(--cw-ink-3)]">Open Access</span>
+                0.00 USD{' '}
+                <span className="text-xs font-normal text-[var(--cw-ink-3)]">
+                  MIT Open Access
+                </span>
               </dd>
-              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">{t.metrics.costNote}</dd>
+              <dd className="text-xs text-[var(--cw-ink-3)] mt-0.5">
+                {t.metrics.costNote}
+              </dd>
             </div>
           </dl>
         </div>
       </section>
 
-      {/* ── MAIN INTERACTIVE FEEDBACK STUDIO ────────────────────────────────── */}
+      {/* ── § 02 — THE 1–100 FORENSIC SENSITIVITY DIAL ──────────────────────── */}
+      <ForensicDialSection />
+
+      {/* ── § 03 — MAIN INTERACTIVE TURNITIN FEEDBACK STUDIO ────────────────── */}
       <FeedbackStudio />
 
-      {/* ── COMPARISON TABLE OF THE THREE INSPECTION CHANNELS (No 3-col cards!) */}
-      <section className="py-14 border-t border-[var(--cw-rule)] bg-[var(--cw-sunken)]">
+      {/* ── § 04 — ANTI-AI-ISH & HUMAN PARAPHRASE STUDIO (<5% Target) ───────── */}
+      <AntiAiParaphraseStudio />
+
+      {/* ── § 05 — NINE FORENSIC PRIMITIVES IN MOTION ───────────────────────── */}
+      <NineBeatsGallery />
+
+      {/* ── § 06 — 1,040+ OPEN-SOURCE ECOSYSTEM & REPOSITORY REGISTRY ───────── */}
+      <EcosystemExplorer />
+
+      {/* ── § 07 — COMPARISON TABLE OF THE THREE INSPECTION CHANNELS ────────── */}
+      <section className="py-14 border-t border-[var(--cw-rule)] bg-[var(--cw-paper)]">
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
           <div className="max-w-[68ch] mb-8">
-            <div className="cw-kicker mb-2">TRIAD CHANNEL SPECIFICATION</div>
+            <div className="cw-kicker mb-2">§ 07 — TRIAD CHANNEL SPECIFICATION</div>
             <h2 className="cw-h1">
               Three distinct analytical channels, separated by mathematical role
             </h2>
             <p className="text-sm text-[var(--cw-ink-2)] mt-2 leading-relaxed">
-              Every highlight color in Citeward maps directly to the three geometric facets of the
-              Citeward Folio Prism mark. Interactive buttons stay strictly on{' '}
-              <code className="cw-mono text-xs">--cw-signal</code> so data never collides with
-              navigation.
+              Every highlight color in Citeward maps directly to the three geometric facets
+              of the Citeward Folio Prism mark. Interactive buttons stay strictly on{' '}
+              <code className="cw-mono text-xs">--cw-signal</code> so data never collides
+              with navigation.
             </p>
           </div>
 
@@ -241,7 +351,10 @@ export default function HomePage() {
               </thead>
               <tbody className="divide-y divide-[var(--cw-rule)]">
                 <tr>
-                  <th scope="row" className="py-4 px-4 font-semibold text-[var(--cw-corpus-ink)] whitespace-nowrap">
+                  <th
+                    scope="row"
+                    className="py-4 px-4 font-semibold text-[var(--cw-corpus-ink)] whitespace-nowrap"
+                  >
                     <span className="inline-block w-2.5 h-2.5 rounded-[2px] bg-[var(--cw-corpus)] mr-2 align-middle" />
                     Corpus &amp; Citation Overlap
                   </th>
@@ -249,10 +362,12 @@ export default function HomePage() {
                     Rabin-Karp Winnowing (k=15, w=10) + 3-Gram MinHash LSH
                   </td>
                   <td className="py-4 px-4 text-[var(--cw-ink-2)]">
-                    Verbatim copies (&ge;24 chars) and 1-to-2 word synonym-swapped patchwork spans across Crossref, OpenAlex, and Wikipedia
+                    Verbatim copies (&ge;24 chars) and 1-to-2 word synonym-swapped
+                    patchwork spans across Crossref, OpenAlex, and Wikipedia
                   </td>
                   <td className="py-4 px-4 text-[var(--cw-ink-2)]">
-                    Union of non-excluded matched word tokens divided by evaluable manuscript words
+                    Union of non-excluded matched word tokens divided by evaluable
+                    manuscript words
                   </td>
                   <td className="py-4 px-4 text-right cw-mono font-semibold text-[var(--cw-ink)]">
                     &le; 0.3% Δ
@@ -260,7 +375,10 @@ export default function HomePage() {
                 </tr>
 
                 <tr>
-                  <th scope="row" className="py-4 px-4 font-semibold text-[var(--cw-stylo-ink)] whitespace-nowrap">
+                  <th
+                    scope="row"
+                    className="py-4 px-4 font-semibold text-[var(--cw-stylo-ink)] whitespace-nowrap"
+                  >
                     <span className="inline-block w-2.5 h-2.5 rounded-[2px] bg-[var(--cw-stylo)] mr-2 align-middle" />
                     Stylometric Cadence Drift
                   </th>
@@ -268,10 +386,12 @@ export default function HomePage() {
                     Burstiness CV (&sigma;/&mu;) + MATTR-50 + Bigram Entropy H
                   </td>
                   <td className="py-4 px-4 text-[var(--cw-ink-2)]">
-                    Unnaturally flat sentence lengths (15–24w band), low lexical variance, and formulaic LLM discourse markers
+                    Unnaturally flat sentence lengths (15–24w band), low lexical variance,
+                    and formulaic LLM discourse markers
                   </td>
                   <td className="py-4 px-4 text-[var(--cw-ink-2)]">
-                    Rewards empirical measurements, citations, and natural human burstiness (&ge;0.38 CV)
+                    Rewards empirical measurements, citations, and natural human
+                    burstiness (&ge;0.38 CV)
                   </td>
                   <td className="py-4 px-4 text-right cw-mono font-semibold text-[var(--cw-ink)]">
                     Clause-Level
@@ -279,7 +399,10 @@ export default function HomePage() {
                 </tr>
 
                 <tr>
-                  <th scope="row" className="py-4 px-4 font-semibold text-[var(--cw-attest-ink)] whitespace-nowrap">
+                  <th
+                    scope="row"
+                    className="py-4 px-4 font-semibold text-[var(--cw-attest-ink)] whitespace-nowrap"
+                  >
                     <span className="inline-block w-2.5 h-2.5 rounded-[2px] bg-[var(--cw-attest)] mr-2 align-middle" />
                     Quote &amp; On-Chain Seal
                   </th>
@@ -287,10 +410,12 @@ export default function HomePage() {
                     SHA-256 Digest + Solana SPL Memo Instruction
                   </td>
                   <td className="py-4 px-4 text-[var(--cw-ink-2)]">
-                    Properly enclosed quotations (&ldquo;...&rdquo;), trailing bibliography sections, and immutable prior-art timestamping
+                    Properly enclosed quotations (&ldquo;...&rdquo;), trailing
+                    bibliography sections, and immutable prior-art timestamping
                   </td>
                   <td className="py-4 px-4 text-[var(--cw-ink-2)]">
-                    Zero manuscript plaintext on-chain; public verification via Solscan Devnet
+                    Zero manuscript plaintext on-chain; public verification via Solscan
+                    Devnet
                   </td>
                   <td className="py-4 px-4 text-right cw-mono font-semibold text-[var(--cw-ink)]">
                     ~400 ms
@@ -302,14 +427,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── WALKTHROUGH DEMO VIDEO SECTION ──────────────────────────────────── */}
-      <section id="walkthrough" className="py-14 border-t border-[var(--cw-rule)]">
+      {/* ── § 08 — 1080P MP4 WALKTHROUGH & 9-GATE AUTOMATED QA PROOF ────────── */}
+      <section
+        id="walkthrough"
+        className="py-14 border-t border-[var(--cw-rule)] bg-[var(--cw-sunken)]"
+      >
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
             <div>
-              <div className="cw-kicker mb-2">INTERACTIVE WALKTHROUGH &amp; VIDEO EXPORT</div>
+              <div className="cw-kicker mb-2">
+                § 08 — 1080P MP4 WALKTHROUGH, CONTACT SHEET &amp; 9-GATE QA PROOF
+              </div>
               <h2 className="cw-h1">
-                Inspect every stage of the pipeline in 24 seconds
+                Inspect every stage on video, verified by nine automated gates
               </h2>
             </div>
             <Link href="/deck" className="cw-btn-ghost text-xs">
@@ -321,13 +451,13 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── ARCHITECTURE STACK (Skiper-16) & TECHNICAL FAQ ──────────────────── */}
-      <section className="py-14 border-t border-[var(--cw-rule)] bg-[var(--cw-sunken)]">
+      {/* ── § 09 — ARCHITECTURE STACK (Skiper-16) & TECHNICAL FAQ ───────────── */}
+      <section className="py-14 border-t border-[var(--cw-rule)] bg-[var(--cw-paper)]">
         <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
             {/* Left 7 cols: Sticky Architecture Stack */}
             <div className="lg:col-span-7">
-              <div className="cw-kicker mb-2">FOUR-STAGE PIPELINE ARCHITECTURE</div>
+              <div className="cw-kicker mb-2">§ 09 — FOUR-STAGE PIPELINE ARCHITECTURE</div>
               <h2 className="cw-h1 mb-6">
                 Built from peer-reviewed information retrieval primitives
               </h2>
@@ -336,7 +466,7 @@ export default function HomePage() {
 
             {/* Right 5 cols: Accessible Technical FAQ */}
             <div className="lg:col-span-5">
-              <div className="cw-kicker mb-2">TECHNICAL OBJECTIONS &amp; VERIFICATION</div>
+              <div className="cw-kicker mb-2">§ 10 — TECHNICAL OBJECTIONS &amp; FAQ</div>
               <h2 className="cw-h2 mb-6">Frequently asked engineering questions</h2>
 
               <div className="space-y-3">
