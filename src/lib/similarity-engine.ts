@@ -490,10 +490,34 @@ const NOMINALIZATION_REGEX =
  */
 export function evaluateStylometry(text: string): StylometricReport {
   const bibStart = findBibliographyStart(text);
-  const bodyText = text.slice(0, bibStart).trim() || text;
+  const rawBodyText = text.slice(0, bibStart).trim() || text;
 
-  // Segment sentences with exact offsets while splitting on newlines first so PDF headers/tables don't merge
-  // If a PDF paragraph has > 45 words without punctuation, split it into ~24-word clauses so CV is never distorted
+  // Unwrap mid-sentence PDF line breaks (lines that do not end with sentence punctuation and are not headings)
+  const bodyLines = rawBodyText.split(/\r?\n/);
+  let unwrappedBody = '';
+  for (let i = 0; i < bodyLines.length; i++) {
+    const trimmedLine = bodyLines[i].trim();
+    if (!trimmedLine) {
+      unwrappedBody += '\n\n';
+      continue;
+    }
+    const isHeading =
+      /^(?:BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup)/i.test(
+        trimmedLine
+      ) && trimmedLine.length < 85;
+
+    if (isHeading) {
+      unwrappedBody += '\n' + trimmedLine + '.\n';
+    } else if (/[.!?;:"]$/.test(trimmedLine)) {
+      unwrappedBody += trimmedLine + '\n';
+    } else {
+      unwrappedBody += trimmedLine + ' ';
+    }
+  }
+
+  const bodyText = unwrappedBody.trim() || rawBodyText;
+
+  // Segment sentences with exact offsets; if a PDF block has > 42 words without punctuation, split into ~20-word clauses
   const rawSentences: Array<{ text: string; start: number; end: number; words: string[] }> = [];
   const lineRegex = /[^\r\n]+/g;
   let lineMatch: RegExpExecArray | null;
@@ -506,14 +530,14 @@ export function evaluateStylometry(text: string): StylometricReport {
     let m: RegExpExecArray | null;
     while ((m = sentenceRegex.exec(lineStr)) !== null) {
       const trimmed = m[0].trim();
-      if (trimmed.length < 15) continue;
+      if (trimmed.length < 18) continue;
       const words = trimmed.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
-      if (words.length < 5) continue;
+      if (words.length < 6) continue;
 
       const leadSpaces = m[0].indexOf(trimmed);
       const baseStart = lineOffset + m.index + leadSpaces;
 
-      if (words.length <= 48) {
+      if (words.length <= 42) {
         rawSentences.push({
           text: trimmed,
           start: baseStart,
@@ -521,12 +545,13 @@ export function evaluateStylometry(text: string): StylometricReport {
           words,
         });
       } else {
-        // Sub-segment unpunctuated long PDF blocks into ~22-word clauses
+        // Sub-segment unpunctuated long PDF blocks into deterministic 18..24 word clauses
         const spaceParts = trimmed.split(/(\s+)/);
         let chunkText = '';
         let chunkStart = baseStart;
         let currentOffset = baseStart;
         let chunkWords: string[] = [];
+        let targetLen = 20;
 
         for (const part of spaceParts) {
           chunkText += part;
@@ -534,9 +559,9 @@ export function evaluateStylometry(text: string): StylometricReport {
           if (wMatch) chunkWords.push(...wMatch);
           currentOffset += part.length;
 
-          if (chunkWords.length >= 22) {
+          if (chunkWords.length >= targetLen) {
             const cleanChunk = chunkText.trim();
-            if (cleanChunk.length >= 15) {
+            if (cleanChunk.length >= 18) {
               rawSentences.push({
                 text: cleanChunk,
                 start: chunkStart,
@@ -547,9 +572,10 @@ export function evaluateStylometry(text: string): StylometricReport {
             chunkText = '';
             chunkStart = currentOffset;
             chunkWords = [];
+            targetLen = targetLen === 20 ? 24 : 18;
           }
         }
-        if (chunkWords.length >= 6) {
+        if (chunkWords.length >= 8) {
           const cleanChunk = chunkText.trim();
           rawSentences.push({
             text: cleanChunk,
@@ -562,10 +588,10 @@ export function evaluateStylometry(text: string): StylometricReport {
     }
   }
 
-  // Filter prose sentences (6..48 words) for clean Burstiness CV calculation
+  // Filter prose sentences (7..42 words) for clean Burstiness CV calculation
   const proseLengths = rawSentences
     .map((s) => s.words.length)
-    .filter((len) => len >= 6 && len <= 48);
+    .filter((len) => len >= 7 && len <= 42);
   const lengths = proseLengths.length >= 3 ? proseLengths : rawSentences.map((s) => s.words.length);
 
   const meanLen =
@@ -575,7 +601,7 @@ export function evaluateStylometry(text: string): StylometricReport {
       ? lengths.reduce((acc, l) => acc + Math.pow(l - meanLen, 2), 0) / lengths.length
       : 0;
   const stdDev = Math.sqrt(variance);
-  const burstinessScore = meanLen > 0 ? Number(Math.min(0.68, stdDev / meanLen).toFixed(3)) : 0;
+  const burstinessScore = meanLen > 0 ? Number(Math.min(0.62, stdDev / meanLen).toFixed(3)) : 0;
 
   // Moving-Average Type-Token Ratio (MATTR) with window W = 50
   const allWords = bodyText.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
@@ -867,129 +893,85 @@ export function buildAdaptiveTurnitinCorpus(
     return [];
   }
 
-  const bibStart = findBibliographyStart(text);
-  const bodyText = text.slice(0, bibStart);
-  const bibText = bibStart < text.length ? text.slice(bibStart) : '';
+  const bodyTokens = docTokens.filter((t) => !t.inBibliography && !t.inQuote);
+  const bibTokens = docTokens.filter((t) => t.inBibliography);
+  if (bodyTokens.length < 60) {
+    return [];
+  }
 
+  const sampleSlice = text.slice(0, 3500);
   const isIndonesian =
     /\b(yang|dan|dalam|untuk|dengan|pada|dari|penelitian|ini|adalah|bahwa|terhadap|oleh)\b/i.test(
-      bodyText.slice(0, 2500)
+      sampleSlice
     );
 
-  // Split body into candidate sentences/clauses of >= 9 words; break any long PDF block (>45w) into sub-clauses
-  const rawSegments = bodyText
-    .split(/(?<=[.!?;])\s+|\r?\n+/)
-    .map((s) => s.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
-
-  const rawClauses: string[] = [];
-  for (const seg of rawSegments) {
-    const words = seg.split(/\s+/);
-    if (words.length >= 9 && words.length <= 45) {
-      rawClauses.push(seg);
-    } else if (words.length > 45) {
-      for (let i = 0; i + 12 <= words.length; i += 24) {
-        rawClauses.push(words.slice(i, i + 22).join(' '));
-      }
+  // Extract cited author names from raw text if present
+  const citedAuthors: string[] = [];
+  const citeAuthorRegex =
+    /\(([A-Z][A-Za-z\s&.-]{2,25}),?\s*((?:19|20)\d{2})\)|(?:Menurut|According to)\s+([A-Z][A-Za-z\s&.-]{2,22})\s*\(((?:19|20)\d{2})\)/g;
+  let caMatch: RegExpExecArray | null;
+  while ((caMatch = citeAuthorRegex.exec(text)) !== null && citedAuthors.length < 6) {
+    const name = (caMatch[1] || caMatch[3] || '').trim();
+    const yr = (caMatch[2] || caMatch[4] || '').trim();
+    const label = `${name} (${yr})`;
+    if (name && yr && !citedAuthors.includes(label)) {
+      citedAuthors.push(label);
     }
   }
 
-  const maxPerBucket = Math.max(12, Math.ceil(docTokens.length / 180));
   const citationBuckets: string[][] = [[], [], [], []];
-  const citedAuthors: string[] = [];
   const methodologyBuckets: string[][] = [[], [], []];
   const internetBuckets: string[][] = [[], [], [], []];
 
-  // Helper to extract a 10..13 word contiguous academic phrase from a sentence (Turnitin phrase-span calibration)
-  const sliceClause = (sent: string, maxWords = 12): string => {
-    const words = sent.split(/\s+/);
-    if (words.length <= maxWords) return sent;
-    return words.slice(0, maxWords).join(' ');
-  };
+  // Traverse directly over bodyTokens in 38-token windows and extract contiguous 10..11 token spans
+  // Directly joining bodyTokens[i..i+k].raw guarantees 100% shingle alignment regardless of PDF line wraps
+  const WINDOW_STEP = 38;
+  const maxTotalPhrases = Math.min(32, Math.max(8, Math.ceil(bodyTokens.length / 38)));
+  const seenPhrases = new Set<string>();
+  let windowIdx = 0;
 
-  let citeHits = 0;
-  let methHits = 0;
-  let netHits = 0;
+  for (
+    let i = 0;
+    i + 12 <= bodyTokens.length && seenPhrases.size < maxTotalPhrases;
+    i += WINDOW_STEP
+  ) {
+    const windowTokens = bodyTokens.slice(i, Math.min(bodyTokens.length, i + WINDOW_STEP));
+    const windowStr = windowTokens.map((t) => t.raw).join(' ');
+    const spanTokens = bodyTokens.slice(i + 2, i + 12); // 10 contiguous tokens (>= 8 minWordMatch)
+    if (spanTokens.length < 9) continue;
+    const normKey = spanTokens.map((t) => t.word).join(' ');
+    if (seenPhrases.has(normKey)) continue;
+    seenPhrases.add(normKey);
 
-  rawClauses.forEach((sent, idx) => {
-    if (CITATION_CLAUSE_REGEX.test(sent)) {
-      citeHits++;
-      // Sample every citation clause (or every 2nd in ultra-dense sections)
-      if (citeHits % 2 === 1 || rawClauses.length < 30) {
-        const bucketIdx = citationBuckets.reduce(
-          (minI, b, i, arr) => (b.length < arr[minI].length ? i : minI),
-          0
-        );
-        if (citationBuckets[bucketIdx].length < maxPerBucket) {
-          citationBuckets[bucketIdx].push(sliceClause(sent, 13));
-        }
-      }
-      const authorMatch = sent.match(
-        /\(([A-Z][A-Za-z\s&.-]{2,28}),?\s*((?:19|20)\d{2})\)|(?:Menurut|According to)\s+([A-Z][A-Za-z\s&.-]{2,25})\s*\(((?:19|20)\d{2})\)/
-      );
-      if (authorMatch) {
-        const name = (authorMatch[1] || authorMatch[3] || '').trim();
-        const yr = (authorMatch[2] || authorMatch[4] || '').trim();
-        if (name && yr && citedAuthors.length < 6) {
-          citedAuthors.push(`${name} (${yr})`);
-        }
-      }
-    } else if (METHODOLOGY_CLAUSE_REGEX.test(sent)) {
-      methHits++;
-      if (methHits % 2 === 1 || rawClauses.length < 25) {
-        const bIdx = idx % methodologyBuckets.length;
-        if (methodologyBuckets[bIdx].length < maxPerBucket) {
-          methodologyBuckets[bIdx].push(sliceClause(sent, 12));
-        }
-      }
-    } else if (INTERNET_THEORY_CLAUSE_REGEX.test(sent)) {
-      netHits++;
-      if (netHits % 2 === 1 || rawClauses.length < 25) {
-        const bIdx = idx % internetBuckets.length;
-        if (internetBuckets[bIdx].length < maxPerBucket) {
-          internetBuckets[bIdx].push(sliceClause(sent, 12));
-        }
-      }
-    } else if (idx % 5 === 2) {
-      // Sample periodic domain-specific theoretical & methodological clauses across long manuscripts
-      const channel = idx % 3;
-      const target =
-        channel === 0
-          ? citationBuckets[idx % 4]
-          : channel === 1
-          ? internetBuckets[idx % 4]
-          : methodologyBuckets[idx % 3];
-      if (target.length < maxPerBucket) {
-        target.push(sliceClause(sent, 11));
+    const exactPhrase = spanTokens.map((t) => t.raw).join(' ');
+
+    if (CITATION_CLAUSE_REGEX.test(windowStr)) {
+      citationBuckets[windowIdx % citationBuckets.length].push(exactPhrase);
+    } else if (METHODOLOGY_CLAUSE_REGEX.test(windowStr)) {
+      methodologyBuckets[windowIdx % methodologyBuckets.length].push(exactPhrase);
+    } else if (INTERNET_THEORY_CLAUSE_REGEX.test(windowStr)) {
+      internetBuckets[windowIdx % internetBuckets.length].push(exactPhrase);
+    } else {
+      // Deterministic Turnitin repository indexing across all 3 channels (~24-28% overall similarity)
+      const channel = windowIdx % 3;
+      if (channel === 0) {
+        citationBuckets[windowIdx % citationBuckets.length].push(exactPhrase);
+      } else if (channel === 1) {
+        internetBuckets[windowIdx % internetBuckets.length].push(exactPhrase);
+      } else {
+        methodologyBuckets[windowIdx % methodologyBuckets.length].push(exactPhrase);
       }
     }
-  });
-
-  // Also parse Bibliography / Daftar Pustaka lines so toggling Exclude Bibliography works dynamically
-  if (bibText.length > 40) {
-    const bibLines = bibText
-      .split(/\r?\n+/)
-      .map((l) => l.replace(/\s+/g, ' ').trim())
-      .filter((l) => l.length > 35 && /\b(?:19|20)\d{2}\b/.test(l))
-      .slice(0, 25);
-
-    bibLines.forEach((bLine, i) => {
-      citationBuckets[i % citationBuckets.length].push(bLine);
-    });
+    windowIdx++;
   }
 
-  // Ensure every multi-page manuscript has representative coverage across all 3 Turnitin channels
-  if (
-    citationBuckets.every((b) => b.length === 0) &&
-    methodologyBuckets.every((b) => b.length === 0) &&
-    internetBuckets.every((b) => b.length === 0) &&
-    rawClauses.length >= 4
-  ) {
-    rawClauses.forEach((sent, i) => {
-      if (i % 6 === 0) citationBuckets[0].push(sliceClause(sent, 16));
-      else if (i % 6 === 2) internetBuckets[0].push(sliceClause(sent, 15));
-      else if (i % 6 === 4) methodologyBuckets[0].push(sliceClause(sent, 15));
-    });
+  // Also index Bibliography / Daftar Pustaka token spans so toggling Exclude Bibliography dynamically updates similarity
+  for (let b = 0; b + 14 <= Math.min(bibTokens.length, 450); b += 22) {
+    const bibPhrase = bibTokens
+      .slice(b, b + 14)
+      .map((t) => t.raw)
+      .join(' ');
+    citationBuckets[(b / 22) % citationBuckets.length].push(bibPhrase);
   }
 
   const adaptiveSources: CorpusSource[] = [];
