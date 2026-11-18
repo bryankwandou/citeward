@@ -63,7 +63,7 @@ export function SiteHeader() {
   };
 
   const navItems = [
-    { href: '/#studio', label: t.nav.studio, match: '/#studio' },
+    { href: '/studio', label: t.nav.studio, match: '/studio' },
     { href: '/#dial', label: t.nav.dial, match: '/#dial' },
     { href: '/#paraphrase', label: t.nav.paraphrase, match: '/#paraphrase' },
     { href: '/#beats', label: t.nav.beats, match: '/#beats' },
@@ -125,6 +125,13 @@ export function SiteHeader() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/studio"
+              className="cw-btn-primary !py-1.5 !px-3 text-xs hidden sm:inline-flex"
+            >
+              <span>Turnitin Dashboard</span>
+            </Link>
+
             {/* Live Solana Devnet Notary Pill */}
             <Link
               href="/verify"

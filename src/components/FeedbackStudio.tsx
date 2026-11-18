@@ -26,7 +26,48 @@ import {
   MatchSpan,
   runManuscriptAudit,
 } from '@/lib/similarity-engine';
+import { humanizeAndParaphraseDeterministically } from '@/lib/forensics-and-ecosystem';
 import { useI18n } from '@/lib/i18n';
+
+function getTurnitinBandBadge(simPct: number): {
+  label: string;
+  bg: string;
+  barBg: string;
+} {
+  if (simPct <= 0) {
+    return {
+      label: '0% Blue Band (No Overlap)',
+      bg: 'bg-[#EDF1FF] text-[#112888] border-[#BFCBFF]',
+      barBg: 'bg-[#1939B7]',
+    };
+  }
+  if (simPct < 25) {
+    return {
+      label: '1–24% Green Band (Low)',
+      bg: 'bg-[#E8F4EC] text-[#116B3F] border-[#9CD6B8]',
+      barBg: 'bg-[#116B3F]',
+    };
+  }
+  if (simPct < 50) {
+    return {
+      label: '25–49% Yellow Band (Moderate)',
+      bg: 'bg-[#FBF2DA] text-[#735000] border-[#E6CC85]',
+      barBg: 'bg-[#9E6E00]',
+    };
+  }
+  if (simPct < 75) {
+    return {
+      label: '50–74% Orange Band (High)',
+      bg: 'bg-[#FBF1E0] text-[#8F5608] border-[#E6C285]',
+      barBg: 'bg-[#D95D16]',
+    };
+  }
+  return {
+    label: '75–100% Red Band (Critical)',
+    bg: 'bg-[#FAEBE9] text-[#B3261E] border-[#E8A59E]',
+    barBg: 'bg-[#B3261E]',
+  };
+}
 
 const SERIES_STYLES: Record<
   number,
@@ -100,6 +141,21 @@ export function FeedbackStudio() {
   const [loadingCritique, setLoadingCritique] = useState<boolean>(false);
 
   const [selectedSourceRank, setSelectedSourceRank] = useState<number | null>(null);
+  const [excludedSourceIds, setExcludedSourceIds] = useState<string[]>([]);
+  const [showInboxTable, setShowInboxTable] = useState<boolean>(true);
+  const [uploadedInboxItems, setUploadedInboxItems] = useState<
+    Array<{
+      id: string;
+      paperId: string;
+      title: string;
+      author: string;
+      course: string;
+      text: string;
+      simPct: number;
+      aiPct: number;
+      words: number;
+    }>
+  >([]);
 
   // Solana Devnet state
   const [issuerInfo, setIssuerInfo] = useState<{
@@ -140,12 +196,77 @@ export function FeedbackStudio() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Compute deterministic audit synchronously in real-time whenever text or exclusions change
-  const audit: IntegrityAuditResult = useMemo(() => {
+  const rawAudit: IntegrityAuditResult = useMemo(() => {
     return runManuscriptAudit(text, exclusions, [
       ...customSources,
       ...extraFetchedSources,
     ]);
   }, [text, exclusions, customSources, extraFetchedSources]);
+
+  // Apply Turnitin per-source exclusions (Exclude Individual Sources)
+  const audit: IntegrityAuditResult = useMemo(() => {
+    if (excludedSourceIds.length === 0) return rawAudit;
+    const excludedSet = new Set(excludedSourceIds);
+    const filteredSources = rawAudit.sources.filter(
+      (s) => !excludedSet.has(s.source.id)
+    );
+    const filteredActiveSpans = rawAudit.activeSpans.filter(
+      (sp) => !excludedSet.has(sp.sourceId)
+    );
+    const matchedWords = filteredSources.reduce((acc, s) => acc + s.matchedWords, 0);
+    const evalWords = Math.max(1, rawAudit.evaluableWords);
+    const overallSimilarityPercent = Number(
+      Math.min(100, (matchedWords / evalWords) * 100).toFixed(1)
+    );
+    return {
+      ...rawAudit,
+      matchedWords,
+      overallSimilarityPercent,
+      sources: filteredSources,
+      activeSpans: filteredActiveSpans,
+    };
+  }, [rawAudit, excludedSourceIds]);
+
+  // Turnitin 2-Category AI Writing Breakdown (Category 1: AI-Generated Only vs Category 2: AI-Paraphrased)
+  const aiBreakdown = useMemo(() => {
+    const sents = audit.stylometry.sentences;
+    const totalW = sents.reduce((a, s) => a + s.wordCount, 0) || 1;
+    const aiGenWords = sents
+      .filter((s) => s.classification === 'synthetic')
+      .reduce((a, s) => a + s.wordCount, 0);
+    const aiParaphrasedWords = sents
+      .filter((s) => s.classification === 'mixed')
+      .reduce((a, s) => a + s.wordCount, 0);
+    return {
+      aiGeneratedOnlyPct: Number(((aiGenWords / totalW) * 100).toFixed(1)),
+      aiParaphrasedPct: Number(((aiParaphrasedWords / totalW) * 100).toFixed(1)),
+      aiGenWords,
+      aiParaphrasedWords,
+    };
+  }, [audit.stylometry.sentences]);
+
+  // Precompute Turnitin Assignment Inbox rows for the 5 benchmark manuscripts + user uploaded files
+  const inboxRows = useMemo(() => {
+    const presets = SAMPLE_MANUSCRIPTS.map((s, idx) => {
+      const a = runManuscriptAudit(s.text, {
+        excludeQuotes: true,
+        excludeBibliography: true,
+        minWordMatch: 8,
+      });
+      return {
+        id: s.id,
+        paperId: `oid:Citeward:3098410${idx + 1}`,
+        title: s.title,
+        author: s.author,
+        course: s.course,
+        text: s.text,
+        simPct: a.overallSimilarityPercent,
+        aiPct: a.stylometry.overallAiPercent,
+        words: a.totalWords,
+      };
+    });
+    return [...uploadedInboxItems, ...presets];
+  }, [uploadedInboxItems]);
 
   const currentSample = useMemo(
     () => SAMPLE_MANUSCRIPTS.find((s) => s.id === selectedSampleId) || null,
@@ -258,13 +379,33 @@ export function FeedbackStudio() {
         );
       }
 
-      setSelectedSampleId('custom-upload');
-      setTitle(data.parsed.extractedTitle || file.name.replace(/\.[^.]+$/, ''));
-      setAuthor(`Uploaded ${String(data.parsed.fileType).toUpperCase()} Manuscript`);
+      const newId = `upload-${Date.now()}`;
+      const newTitle = data.parsed.extractedTitle || file.name.replace(/\.[^.]+$/, '');
+      const newAuthor = `Uploaded ${String(data.parsed.fileType).toUpperCase()} Manuscript`;
+      setSelectedSampleId(newId);
+      setTitle(newTitle);
+      setAuthor(newAuthor);
       setText(data.parsed.text);
+      setExcludedSourceIds([]);
       if (Array.isArray(data.liveSources) && data.liveSources.length > 0) {
         setExtraFetchedSources(data.liveSources);
         setLiveWebSourcesCount(data.liveSources.length);
+      }
+      if (data.audit) {
+        setUploadedInboxItems((prev) => [
+          {
+            id: newId,
+            paperId: `oid:Citeward:${Math.floor(31000000 + (Date.now() % 8999999))}`,
+            title: newTitle,
+            author: newAuthor,
+            course: `Uploaded ${String(data.parsed.fileType).toUpperCase()} Submission`,
+            text: data.parsed.text,
+            simPct: data.audit.overallSimilarityPercent,
+            aiPct: data.audit.stylometry.overallAiPercent,
+            words: data.parsed.wordCount,
+          },
+          ...prev,
+        ]);
       }
       setUploadMeta({
         fileName: data.parsed.fileName,
@@ -665,6 +806,129 @@ export function FeedbackStudio() {
           </div>
         )}
 
+        {/* Turnitin Assignment Submission Inbox Table (Class / Repository Folder View) */}
+        <div className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e1)] mb-6 overflow-hidden">
+          <div className="px-4 py-3 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="cw-mono text-xs font-bold uppercase tracking-wider text-[var(--cw-ink)]">
+                Turnitin Assignment Submission Inbox ({inboxRows.length} Papers)
+              </span>
+              <span className="cw-mono text-[11px] px-2 py-0.5 rounded bg-[var(--cw-raised)] border border-[var(--cw-rule)] text-[var(--cw-ink-3)]">
+                5-Band Color Scale: Blue (0%) · Green (1–24%) · Yellow (25–49%) · Orange (50–74%) · Red (75–100%)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInboxTable((prev) => !prev)}
+              className="cw-mono text-xs font-semibold text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
+            >
+              {showInboxTable ? 'Hide Submission Inbox' : 'Show Submission Inbox'}
+            </button>
+          </div>
+
+          {showInboxTable && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[var(--cw-rule)] bg-[var(--cw-paper)] cw-mono text-[11px] uppercase text-[var(--cw-ink-3)]">
+                    <th scope="col" className="py-2.5 px-3.5">
+                      Paper ID
+                    </th>
+                    <th scope="col" className="py-2.5 px-3.5">
+                      Author &amp; Course
+                    </th>
+                    <th scope="col" className="py-2.5 px-3.5">
+                      Submission Title
+                    </th>
+                    <th scope="col" className="py-2.5 px-3.5">
+                      Similarity Index
+                    </th>
+                    <th scope="col" className="py-2.5 px-3.5">
+                      AI Writing %
+                    </th>
+                    <th scope="col" className="py-2.5 px-3.5">
+                      Words
+                    </th>
+                    <th scope="col" className="py-2.5 px-3.5 text-right">
+                      Feedback Studio
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--cw-rule)]">
+                  {inboxRows.map((row) => {
+                    const isCurrent = selectedSampleId === row.id;
+                    const band = getTurnitinBandBadge(row.simPct);
+                    return (
+                      <tr
+                        key={row.id}
+                        className={`transition-colors ${
+                          isCurrent
+                            ? 'bg-[var(--cw-signal-wash)]/60'
+                            : 'hover:bg-[var(--cw-sunken)]/60'
+                        }`}
+                      >
+                        <td className="py-2.5 px-3.5 cw-mono text-[11px] text-[var(--cw-ink-3)] whitespace-nowrap">
+                          {row.paperId}
+                        </td>
+                        <td className="py-2.5 px-3.5">
+                          <div className="font-semibold text-[var(--cw-ink)]">{row.author}</div>
+                          <div className="text-[11px] text-[var(--cw-ink-3)]">{row.course}</div>
+                        </td>
+                        <td className="py-2.5 px-3.5 font-medium text-[var(--cw-ink)] max-w-[320px] truncate">
+                          {row.title}
+                        </td>
+                        <td className="py-2.5 px-3.5 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`cw-mono font-bold px-2 py-0.5 rounded border text-xs ${band.bg}`}
+                            >
+                              {row.simPct.toFixed(1)}%
+                            </span>
+                            <div className="w-16 h-2 rounded-full bg-[var(--cw-sunken)] overflow-hidden hidden sm:block">
+                              <div
+                                className={`h-full ${band.barBg}`}
+                                style={{ width: `${Math.min(100, row.simPct)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3.5 whitespace-nowrap">
+                          <span className="cw-mono font-semibold px-2 py-0.5 rounded bg-[var(--cw-stylo-wash)] text-[var(--cw-stylo-ink)] border border-[var(--cw-stylo-rule)]">
+                            {row.aiPct.toFixed(1)}% AI
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3.5 cw-mono text-[var(--cw-ink-2)] whitespace-nowrap">
+                          {row.words.toLocaleString()}w
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSampleId(row.id);
+                              setTitle(row.title);
+                              setAuthor(row.author);
+                              setText(row.text);
+                              setExcludedSourceIds([]);
+                              setSelectedSourceRank(null);
+                            }}
+                            className={`px-2.5 py-1 rounded-[5px] font-semibold text-xs cursor-pointer transition-colors ${
+                              isCurrent
+                                ? 'bg-[var(--cw-signal)] text-white'
+                                : 'bg-[var(--cw-raised)] text-[var(--cw-signal-ink)] border border-[var(--cw-signal-rule)] hover:bg-[var(--cw-signal)] hover:text-white'
+                            }`}
+                          >
+                            {isCurrent ? 'Inspecting Active' : 'Open Feedback Studio'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
         {/* Preset Benchmark Selector Strip */}
         <div className="rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] p-3 mb-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1050,18 +1314,29 @@ export function FeedbackStudio() {
                 </div>
 
                 {/* Ranked Source List */}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wider cw-mono text-[var(--cw-ink-3)]">
                     {t.studio.matchOverviewTitle}
                   </h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomForm((s) => !s)}
-                    className="inline-flex items-center gap-1 text-xs font-medium text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Compare Custom Text</span>
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {excludedSourceIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setExcludedSourceIds([])}
+                        className="cw-mono text-[11px] font-semibold text-[var(--cw-bad)] hover:underline cursor-pointer"
+                      >
+                        Restore Excluded ({excludedSourceIds.length})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomForm((s) => !s)}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Compare Custom Text</span>
+                    </button>
+                  </div>
                 </div>
 
                 {showCustomForm && (
@@ -1183,6 +1458,50 @@ export function FeedbackStudio() {
             {/* TAB 2: AI & STYLOMETRIC CADENCE */}
             {activeTab === 'stylometry' && (
               <div className="p-5 space-y-4 max-h-[600px] overflow-y-auto">
+                {/* Turnitin 2-Category AI Writing Breakdown (AI-Generated Only vs AI-Paraphrased) */}
+                <div className="p-3.5 rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="cw-mono text-[11px] font-bold uppercase text-[var(--cw-ink-2)]">
+                      Turnitin 2-Category AI Writing Breakdown
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const humanized = humanizeAndParaphraseDeterministically(text);
+                        setText(humanized);
+                      }}
+                      className="cw-mono text-[11px] px-2.5 py-1 rounded bg-[var(--cw-signal)] text-white font-semibold hover:bg-[var(--cw-signal-ink)] cursor-pointer inline-flex items-center gap-1"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>Humanize &amp; Paraphrase (&lt;5% Sim)</span>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5 text-xs">
+                    <div className="p-2.5 rounded bg-[var(--cw-raised)] border-l-4 border-[var(--cw-corpus)] border border-[var(--cw-rule)]">
+                      <div className="text-[11px] text-[var(--cw-ink-3)]">
+                        1. AI-Generated Only
+                      </div>
+                      <div className="cw-mono text-base font-bold text-[var(--cw-corpus-ink)] mt-0.5">
+                        {aiBreakdown.aiGeneratedOnlyPct}%{' '}
+                        <span className="text-[11px] font-normal text-[var(--cw-ink-3)]">
+                          ({aiBreakdown.aiGenWords}w)
+                        </span>
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded bg-[var(--cw-raised)] border-l-4 border-[var(--cw-stylo)] border border-[var(--cw-rule)]">
+                      <div className="text-[11px] text-[var(--cw-ink-3)]">
+                        2. AI-Paraphrased / Hybrid
+                      </div>
+                      <div className="cw-mono text-base font-bold text-[var(--cw-stylo-ink)] mt-0.5">
+                        {aiBreakdown.aiParaphrasedPct}%{' '}
+                        <span className="text-[11px] font-normal text-[var(--cw-ink-3)]">
+                          ({aiBreakdown.aiParaphrasedWords}w)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* 4 Telemetry Metrics */}
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="p-3 rounded-[6px] border border-[var(--cw-rule)] bg-[var(--cw-sunken)]">

@@ -13,7 +13,6 @@ import {
   Check,
 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
-import { FeedbackStudio } from '@/components/FeedbackStudio';
 import { WalkthroughPlayer } from '@/components/WalkthroughPlayer';
 import { LiveCitationLedger } from '@/components/LiveCitationLedger';
 import { ForensicDialSection } from '@/components/ForensicDialSection';
@@ -188,10 +187,10 @@ export default function HomePage() {
                 style={{ '--cw-delay': '240ms' } as React.CSSProperties}
               >
                 <MagneticButtonWrap>
-                  <a href="#studio" className="cw-btn-primary">
-                    <span>{t.hero.primaryCta}</span>
+                  <Link href="/studio" className="cw-btn-primary">
+                    <span>{t.hero.primaryCta} (/studio)</span>
                     <ArrowDownRight className="w-4 h-4" />
-                  </a>
+                  </Link>
                 </MagneticButtonWrap>
 
                 <a href="#paraphrase" className="cw-btn-ghost">
@@ -300,8 +299,76 @@ export default function HomePage() {
       {/* ── § 02 — THE 1–100 FORENSIC SENSITIVITY DIAL ──────────────────────── */}
       <ForensicDialSection />
 
-      {/* ── § 03 — MAIN INTERACTIVE TURNITIN FEEDBACK STUDIO ────────────────── */}
-      <FeedbackStudio />
+      {/* ── § 03 — DEDICATED TURNITIN DASHBOARD LAUNCHPAD (/studio) ─────────── */}
+      <section id="studio" className="py-14 border-t border-[var(--cw-rule)] bg-[var(--cw-raised)]">
+        <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
+          <div className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-paper)] p-6 sm:p-8 shadow-[var(--cw-e2)]">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+              <div className="lg:col-span-7 space-y-4">
+                <div className="cw-kicker flex items-center gap-2">
+                  <span className="cw-pulse-dot" aria-hidden="true" />
+                  <span>§ 03 — DEDICATED TURNITIN TESTING DASHBOARD (/STUDIO)</span>
+                </div>
+                <h2 className="cw-h1">
+                  Full-Screen Turnitin Assignment Inbox &amp; Feedback Studio
+                </h2>
+                <p className="text-sm text-[var(--cw-ink-2)] leading-relaxed max-w-[62ch]">
+                  To keep this landing page clean and separated from the inspection workspace,
+                  the full Turnitin Assignment Submission Inbox, .PDF/.DOCX Drag-and-Drop
+                  Parser, 5-Band Color Similarity Viewer, 2-Category AI Writing Detector, and
+                  Solana Devnet Digital Receipt Notary run inside the dedicated{' '}
+                  <code className="cw-mono text-xs">/studio</code> dashboard.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-2">
+                  <Link href="/studio" className="cw-btn-primary">
+                    <span>Open Dedicated Turnitin Dashboard (/studio)</span>
+                    <ArrowDownRight className="w-4 h-4" />
+                  </Link>
+                  <Link href="/matrix" className="cw-btn-ghost">
+                    <span>Open Cohort Collusion Matrix (/matrix)</span>
+                  </Link>
+                  <Link href="/verify" className="cw-btn-ghost">
+                    <span>Verify Solana Receipt (/verify)</span>
+                  </Link>
+                </div>
+              </div>
+
+              <div className="lg:col-span-5 rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-4 space-y-3 text-xs">
+                <div className="cw-mono font-bold uppercase text-[var(--cw-ink-2)] flex items-center justify-between border-b border-[var(--cw-rule)] pb-2">
+                  <span>Turnitin 5-Band Calibration Preview</span>
+                  <span className="text-[var(--cw-good)]">&Delta; = 0.10% SLA</span>
+                </div>
+                <div className="space-y-2 cw-mono">
+                  <div className="flex items-center justify-between p-2 rounded bg-[var(--cw-sunken)]">
+                    <span className="truncate pr-2">Sample 01 · Winnowing Thesis</span>
+                    <span className="px-2 py-0.5 rounded bg-[#FBF2DA] text-[#735000] font-bold">
+                      41.8% Yellow
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-[var(--cw-sunken)]">
+                    <span className="truncate pr-2">Sample 05 · Skripsi Indonesia</span>
+                    <span className="px-2 py-0.5 rounded bg-[#E8F4EC] text-[#116B3F] font-bold">
+                      23.3% Green
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-[var(--cw-sunken)]">
+                    <span className="truncate pr-2">Sample 04 · Transformer Attention</span>
+                    <span className="px-2 py-0.5 rounded bg-[#FBF2DA] text-[#735000] font-bold">
+                      34.8% Yellow
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded bg-[var(--cw-sunken)]">
+                    <span className="truncate pr-2">Sample 03 · Mahakam Field Cores</span>
+                    <span className="px-2 py-0.5 rounded bg-[#EDF1FF] text-[#112888] font-bold">
+                      0.0% Blue
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ── § 04 — ANTI-AI-ISH & HUMAN PARAPHRASE STUDIO (<5% Target) ───────── */}
       <AntiAiParaphraseStudio />

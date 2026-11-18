@@ -218,4 +218,34 @@ Furthermore, it is important to note that optimizing transformer inference requi
 References
 1. Vaswani, A., Shazeer, N., Parmar, N., Uszkoreit, J., Jones, L., & Gomez, A. N. (2017). Attention Is All You Need. Advances in Neural Information Processing Systems (NeurIPS), 30.`,
   },
+  {
+    id: 'skripsi-indonesia',
+    label: 'Sample 05 · Skripsi Bahasa Indonesia (SINTA & ETD)',
+    subtitle: 'Indonesian thesis with in-text citations, quantitative methodology, and Daftar Pustaka',
+    expectedTurnitinSimilarity: 29.0,
+    expectedExcludedSimilarity: 23.4,
+    title: 'Analisis Efektivitas Algoritma Winnowing dan MinHash pada Pemeriksaan Keaslian Karya Ilmiah Mahasiswa',
+    author: 'Putri Wulandari · Skripsi Sarjana Komputer',
+    course: 'IF-499 Tugas Akhir & Metodologi Penelitian',
+    text: `BAB I PENDAHULUAN
+1.1 Latar Belakang Masalah
+Perkembangan teknologi informasi di era digital menuntut perguruan tinggi untuk menyediakan sistem pemeriksaan kemiripan dokumen yang transparan dan terjangkau bagi mahasiswa. Menurut Sugiyono (2019), metode penelitian kuantitatif dapat diartikan sebagai metode penelitian yang berlandaskan pada filsafat positivisme untuk meneliti populasi atau sampel tertentu. Berdasarkan penelitian Rahmawati (2022), penggunaan algoritma pencocokan teks deterministik memberikan akurasi yang konsisten dalam mendeteksi kutipan langsung maupun parafrase dekat pada karya tulis ilmiah mahasiswa.
+
+1.2 Rumusan Masalah dan Tujuan Penelitian
+Rumusan masalah dalam penelitian ini adalah bagaimana pengaruh transparansi algoritma terhadap akurasi pemeriksaan naskah akademik mahasiswa. Tujuan penelitian ini adalah untuk menganalisis efektivitas algoritma Rabin-Karp Winnowing dan MinHash dalam memetakan tingkat kemiripan naskah terhadap publikasi ilmiah dan repositori mahasiswa.
+
+BAB II TINJAUAN PUSTAKA
+Landasan teori dalam penelitian ini mencakup konsep pencarian informasi dan analisis stilometri kalimat. Sebagaimana dikemukakan oleh Pratama (2021), indeks kemiripan dokumen dihitung dari gabungan token kata yang beririsan dibagi dengan total kata yang dievaluasi setelah pengecualian kutipan dan daftar pustaka. Selain itu, penggunaan variasi panjang kalimat menjadi indikator utama dalam membedakan tulisan empiris manusia dari teks sintetis yang seragam.
+
+BAB III METODE PENELITIAN
+Metode penelitian yang digunakan dalam penelitian ini adalah metode eksperimen kuantitatif dengan pendekatan komparatif. Populasi dan sampel dalam penelitian ini meliputi 150 dokumen skripsi mahasiswa dari berbagai program studi. Teknik pengumpulan data dilakukan melalui dokumentasi korpus dan pengujian instrumen kalibrasi. Teknik analisis data menggunakan uji validitas, uji reliabilitas, dan regresi linier berganda pada taraf signifikansi lima persen.
+
+BAB IV HASIL DAN PEMBAHASAN
+Berdasarkan hasil analisis data pada tabel pengujian, ditemukan bahwa variabel independen berpengaruh positif dan signifikan terhadap akurasi deteksi kemiripan naskah. Hal ini menunjukkan bahwa pemisahan kutipan dan daftar pustaka mampu menurunkan simpangan pengukuran hingga di bawah tiga per sepuluh persen. Dengan demikian, dapat disimpulkan bahwa arsitektur terbuka mampu menyamai standar industri.
+
+DAFTAR PUSTAKA
+Pratama, A. (2021). Evaluasi Algoritma Pencocokan String pada Dokumen Akademik. Jurnal Teknologi Informasi, 12(2), 45-58.
+Rahmawati, D. (2022). Analisis Kemiripan Karya Ilmiah Menggunakan Metode Winnowing. Prosiding Seminar Nasional Ilmu Komputer, 88-96.
+Sugiyono. (2019). Metode Penelitian Kuantitatif, Kualitatif, dan R&D. Bandung: Alfabeta.`,
+  },
 ];

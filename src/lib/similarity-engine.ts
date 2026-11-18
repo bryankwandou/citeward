@@ -866,7 +866,7 @@ const INTERNET_THEORY_CLAUSE_REGEX =
 
 function isBuiltInBenchmarkOrPreset(text: string): boolean {
   const norm = text.slice(0, 260).toLowerCase().replace(/\s+/g, ' ').trim();
-  for (const s of SAMPLE_MANUSCRIPTS) {
+  for (const s of SAMPLE_MANUSCRIPTS.slice(0, 4)) {
     const sNorm = s.text.slice(0, 180).toLowerCase().replace(/\s+/g, ' ').trim();
     if (norm.includes(sNorm.slice(0, 90))) return true;
   }
