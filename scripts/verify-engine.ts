@@ -213,8 +213,13 @@ async function main() {
     sourceTitles.includes('fib.ub.ac.id') || sourceTitles.includes('Siada'),
     `Expected extracted document sources (fib.ub.ac.id / Siada) in Match Overview, got: ${sourceTitles}`
   );
+  const crossedBracket = uajmAudit.activeSpans.some((sp) => /\.\s*\[\d+\]/.test(sp.matchedText));
+  assert(
+    !crossedBracket,
+    'Highlight spans must never cross a period into a [N] bracket reference'
+  );
   console.log(
-    `[PASS] Real Document Citation & Domain Extraction: Sim=${uajmAudit.overallSimilarityPercent}%, Top Sources=[${sourceTitles.slice(0, 140)}...]`
+    `[PASS] Real Document Citation & Domain Extraction: Sim=${uajmAudit.overallSimilarityPercent}%, Spans=${uajmAudit.activeSpans.length} (0 crossed brackets), Top Sources=[${sourceTitles.slice(0, 140)}...]`
   );
 }
 

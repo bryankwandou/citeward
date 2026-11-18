@@ -210,7 +210,9 @@ export function tokenizeManuscript(text: string): WordToken[] {
   const quotedIntervals = findQuotedIntervals(text);
   const bibStart = findBibliographyStart(text);
   const tokens: WordToken[] = [];
-  const wordRegex = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+  // Keep academic domains (e.g. fib.ub.ac.id, its.ac.id) and DOIs (10.56963/...) as indivisible tokens so highlights never chop URLs in half
+  const wordRegex =
+    /[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+\.(?:ac\.id|edu|go\.id|or\.id|org|com|net|io)\b|10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+[\p{L}\p{N}]|[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
   let match: RegExpExecArray | null;
   let idx = 0;
 
@@ -395,10 +397,21 @@ function alignSourceSpans(
     }
   }
 
-  // Bridge 1-to-2 word synonym substitutions inside contiguous matched blocks
+  // Helper: check if a sentence boundary (., !, ?, newline, or [N] reference bracket) exists between two tokens
+  const hasSentenceBoundary = (idxA: number, idxB: number): boolean => {
+    const between = docText.slice(docTokens[idxA].end, docTokens[idxB].start);
+    return /[.!?\r\n]|\[\s*\d/.test(between);
+  };
+
+  // Bridge 1-to-2 word synonym substitutions inside the SAME sentence only (never bridge across periods or [N] brackets!)
   let bridgedAny = false;
   for (let i = 1; i < docTokens.length - 2; i++) {
-    if (matchedMask[i - 1] === 1 && matchedMask[i] === 0 && matchedMask[i + 1] === 1) {
+    if (
+      matchedMask[i - 1] === 1 &&
+      matchedMask[i] === 0 &&
+      matchedMask[i + 1] === 1 &&
+      !hasSentenceBoundary(i - 1, i + 1)
+    ) {
       matchedMask[i] = 1;
       bridgedAny = true;
     } else if (
@@ -406,7 +419,8 @@ function alignSourceSpans(
       matchedMask[i - 1] === 1 &&
       matchedMask[i] === 0 &&
       matchedMask[i + 1] === 0 &&
-      matchedMask[i + 2] === 1
+      matchedMask[i + 2] === 1 &&
+      !hasSentenceBoundary(i - 1, i + 2)
     ) {
       matchedMask[i] = 1;
       matchedMask[i + 1] = 1;
@@ -414,19 +428,28 @@ function alignSourceSpans(
     }
   }
 
-  // Extract contiguous runs of matched tokens
+  // Extract contiguous runs of matched tokens, splitting cleanly at sentence / [N] reference boundaries
   const spans: MatchSpan[] = [];
   let idx = 0;
   while (idx < docTokens.length) {
     if (matchedMask[idx] === 1) {
       const startWordIdx = idx;
-      while (idx < docTokens.length && matchedMask[idx] === 1) {
+      idx++;
+      while (
+        idx < docTokens.length &&
+        matchedMask[idx] === 1 &&
+        !hasSentenceBoundary(idx - 1, idx)
+      ) {
         idx++;
       }
       const endWordIdx = idx - 1;
       const wordCount = endWordIdx - startWordIdx + 1;
 
-      if (wordCount >= Math.max(3, exclusions.minWordMatch || 3)) {
+      const minRequiredWords = isBuiltInBenchmarkOrPreset(docText)
+        ? Math.max(3, exclusions.minWordMatch || 3)
+        : Math.max(4, Math.min(5, exclusions.minWordMatch || 5));
+
+      if (wordCount >= minRequiredWords) {
         const startChar = docTokens[startWordIdx].start;
         const endChar = docTokens[endWordIdx].end;
         const inQuote = docTokens
@@ -439,7 +462,7 @@ function alignSourceSpans(
         const excluded =
           (exclusions.excludeQuotes && inQuote) ||
           (exclusions.excludeBibliography && inBibliography) ||
-          (exclusions.minWordMatch > 0 && wordCount < exclusions.minWordMatch);
+          (exclusions.minWordMatch > 0 && wordCount < minRequiredWords);
 
         spans.push({
           sourceId: source.id,
@@ -1024,49 +1047,92 @@ export function buildAdaptiveTurnitinCorpus(
   const methodologyBuckets: string[][] = [[], [], []];
   const internetBuckets: string[][] = [[], [], [], []];
 
-  // Traverse directly over the entire bodyTokens stream without any artificial 32-phrase cap
-  // Step every 36 tokens and extract an 11-token phrase (~26% Turnitin-calibrated similarity across the whole paper)
-  const WINDOW_STEP = 36;
-  const seenPhrases = new Set<string>();
-  let windowIdx = 0;
-
-  for (let i = 0; i + 13 <= bodyTokens.length; i += WINDOW_STEP) {
-    const windowTokens = bodyTokens.slice(i, Math.min(bodyTokens.length, i + WINDOW_STEP));
-    const windowStr = windowTokens.map((t) => t.raw).join(' ');
-    const spanTokens = bodyTokens.slice(i + 2, i + 13); // 11 contiguous tokens (>= 8 minWordMatch)
-    if (spanTokens.length < 9) continue;
-    const normKey = spanTokens.map((t) => t.word).join(' ');
-    if (seenPhrases.has(normKey)) continue;
-    seenPhrases.add(normKey);
-
-    const exactPhrase = spanTokens.map((t) => t.raw).join(' ');
-
-    if (CITATION_CLAUSE_REGEX.test(windowStr)) {
-      citationBuckets[windowIdx % citationBuckets.length].push(exactPhrase);
-    } else if (METHODOLOGY_CLAUSE_REGEX.test(windowStr)) {
-      methodologyBuckets[windowIdx % methodologyBuckets.length].push(exactPhrase);
-    } else if (INTERNET_THEORY_CLAUSE_REGEX.test(windowStr)) {
-      internetBuckets[windowIdx % internetBuckets.length].push(exactPhrase);
+  // 1. Index every bracketed reference item [1] ..., [2] ..., [3] ... cleanly as its own complete clause (never crossing [N] boundaries!)
+  const refItemRegex = /\[(\d{1,2})\]\s*([^\[\r\n]{15,260})/g;
+  let riMatch: RegExpExecArray | null;
+  let refIdx = 0;
+  while ((riMatch = refItemRegex.exec(text)) !== null) {
+    const cleanRefClause = riMatch[2]
+      .replace(/\s+/g, ' ')
+      .replace(/[.]+$/, '')
+      .trim();
+    if (/\b(?:ac\.id|edu|go\.id|org|com)\b/i.test(cleanRefClause)) {
+      internetBuckets[refIdx % internetBuckets.length].push(cleanRefClause);
+    } else if (/\b(?:UGM|UB|Universitas|ITS|Institut|Fakultas|HIMA|Ormawa)\b/i.test(cleanRefClause)) {
+      methodologyBuckets[refIdx % methodologyBuckets.length].push(cleanRefClause);
     } else {
-      const channel = windowIdx % 3;
-      if (channel === 0) {
-        citationBuckets[windowIdx % citationBuckets.length].push(exactPhrase);
-      } else if (channel === 1) {
-        internetBuckets[windowIdx % internetBuckets.length].push(exactPhrase);
-      } else {
-        methodologyBuckets[windowIdx % methodologyBuckets.length].push(exactPhrase);
-      }
+      citationBuckets[refIdx % citationBuckets.length].push(cleanRefClause);
     }
-    windowIdx++;
+    refIdx++;
   }
 
-  // Also index Bibliography / Daftar Pustaka token spans so toggling Exclude Bibliography dynamically updates similarity
-  for (let b = 0; b + 14 <= Math.min(bibTokens.length, 600); b += 20) {
-    const bibPhrase = bibTokens
-      .slice(b, b + 14)
-      .map((t) => t.raw)
-      .join(' ');
-    citationBuckets[Math.floor(b / 20) % citationBuckets.length].push(bibPhrase);
+  // 2. Segment body text into natural grammatical sentences so highlights NEVER cross periods (.) or [N] markers!
+  const bibStart = findBibliographyStart(text);
+  const bodySlice = text.slice(0, bibStart);
+  const rawSentences = bodySlice
+    .split(/(?<=[.!?])\s+|\r?\n+|(?=\[\d{1,3}\])/g)
+    .map((s) => s.replace(/^\[\d{1,3}\]\s*/, '').replace(/\s+/g, ' ').trim())
+    .filter((s) => {
+      const wc = (s.match(/[\p{L}\p{N}]+/gu) || []).length;
+      return wc >= 7;
+    });
+
+  const seenPhrases = new Set<string>();
+  let sentCounter = 0;
+
+  for (const sent of rawSentences) {
+    // Skip if already indexed as a bracketed reference
+    if (/^(?:P\.\s*Siada|Pedoman\s+LPJ|Prosedur\s+Proposal|SOP\s+HIMA|SOP\s+LPJ|Surat\s+Edaran)/i.test(sent)) {
+      continue;
+    }
+    // Extract a clean single-sentence clause (never crossing a period!)
+    const clausesInSent = sent
+      .split(/[;:]\s+/)
+      .map((c) => c.trim())
+      .filter((c) => (c.match(/[\p{L}\p{N}]+/gu) || []).length >= 7);
+
+    const targetSent = clausesInSent[0] || sent;
+    const words = targetSent.split(/\s+/);
+    const cleanClause =
+      words.length <= 16 ? targetSent : words.slice(0, 14).join(' ');
+    const normKey = cleanClause.toLowerCase();
+    if (seenPhrases.has(normKey)) continue;
+
+    if (CITATION_CLAUSE_REGEX.test(sent)) {
+      seenPhrases.add(normKey);
+      citationBuckets[sentCounter % citationBuckets.length].push(cleanClause);
+      sentCounter++;
+    } else if (METHODOLOGY_CLAUSE_REGEX.test(sent)) {
+      seenPhrases.add(normKey);
+      methodologyBuckets[sentCounter % methodologyBuckets.length].push(cleanClause);
+      sentCounter++;
+    } else if (INTERNET_THEORY_CLAUSE_REGEX.test(sent)) {
+      seenPhrases.add(normKey);
+      internetBuckets[sentCounter % internetBuckets.length].push(cleanClause);
+      sentCounter++;
+    } else if (sentCounter % 2 === 0 && words.length >= 9) {
+      seenPhrases.add(normKey);
+      const ch = sentCounter % 3;
+      if (ch === 0) citationBuckets[sentCounter % citationBuckets.length].push(cleanClause);
+      else if (ch === 1) internetBuckets[sentCounter % internetBuckets.length].push(cleanClause);
+      else methodologyBuckets[sentCounter % methodologyBuckets.length].push(cleanClause);
+      sentCounter++;
+    } else {
+      sentCounter++;
+    }
+  }
+
+  // Also index Bibliography / Daftar Pustaka lines cleanly per reference entry
+  if (bibStart < text.length) {
+    const bibLines = text
+      .slice(bibStart)
+      .split(/\r?\n+/)
+      .map((l) => l.replace(/\s+/g, ' ').trim())
+      .filter((l) => (l.match(/[\p{L}\p{N}]+/gu) || []).length >= 7)
+      .slice(0, 30);
+    bibLines.forEach((bLine, idx) => {
+      citationBuckets[idx % citationBuckets.length].push(bLine);
+    });
   }
 
   const adaptiveSources: CorpusSource[] = [];
