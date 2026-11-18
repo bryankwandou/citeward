@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none" role="img" aria-label="Citeward Folio Prism Mark">
+  <!-- Outer archival calibration ring -->
+  <rect x="8" y="8" width="104" height="104" rx="18" fill="#0C0D0F" />
+  <rect x="11" y="11" width="98" height="98" rx="15" stroke="#2D3340" stroke-width="1.5" />
+
+  <!-- Facet 1: Corpus & Citation Leaf (Teal #028DB0 / #2AD0F0) -->
+  <path d="M60 20L24 41V79L46 66V47L60 39V20Z" fill="#028DB0" />
+  <path d="M60 20L96 41L78 51.5L60 39V20Z" fill="#2AD0F0" />
+  <!-- Engraved folio comparison lines on Teal facet -->
+  <line x1="30" y1="47" x2="42" y2="40" stroke="#FAF8F4" stroke-width="2" stroke-linecap="round" stroke-opacity="0.75" />
+  <line x1="30" y1="55" x2="42" y2="48" stroke="#FAF8F4" stroke-width="2" stroke-linecap="round" stroke-opacity="0.75" />
+  <line x1="30" y1="63" x2="42" y2="56" stroke="#FAF8F4" stroke-width="2" stroke-linecap="round" stroke-opacity="0.75" />
+
+  <!-- Facet 2: Stylometric Cadence Wing (Crimson-Magenta #B5096F / #F45BA8) -->
+  <path d="M96 41V79L60 100V81L74 73V54L96 41Z" fill="#B5096F" />
+  <path d="M96 41L74 54V73L86 66V47L96 41Z" fill="#F45BA8" fill-opacity="0.88" />
+  <!-- Stylometric cadence bars -->
+  <line x1="80" y1="57" x2="90" y2="51" stroke="#FAF8F4" stroke-width="2" stroke-linecap="round" stroke-opacity="0.8" />
+  <line x1="80" y1="65" x2="87" y2="61" stroke="#FAF8F4" stroke-width="2" stroke-linecap="round" stroke-opacity="0.8" />
+
+  <!-- Facet 3: On-Chain Attestation Keystone (Ochre-Gold #D49B00 / #F5BD1C) -->
+  <path d="M24 79L60 100V81L46 73L24 79Z" fill="#B08000" />
+  <path d="M24 79L46 66L60 74.5L74 66L60 81L24 79Z" fill="#F5BD1C" />
+
+  <!-- Central Verification Caliper / Diamond Seal -->
+  <polygon points="60,44 74,56 60,68 46,56" fill="#FAF8F4" />
+  <polygon points="60,49 69,56 60,63 51,56" fill="#1939B7" />
+  <circle cx="60" cy="56" r="2.5" fill="#FAF8F4" />
+</svg>

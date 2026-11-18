@@ -1,0 +1,43 @@
+{
+  "name": "citeward",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Open-source manuscript similarity engine, Winnowing fingerprint inspector, stylometric authorship analyzer, and Solana Devnet prior-art notary.",
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "npm run verify && next build --webpack",
+    "start": "next start",
+    "lint": "eslint",
+    "verify": "tsx scripts/verify-all.ts",
+    "verify:engine": "tsx scripts/verify-engine.ts",
+    "verify:contrast": "tsx scripts/verify-contrast.ts",
+    "verify:copy": "tsx scripts/verify-copy.ts",
+    "verify:solana": "tsx --env-file=.env.local scripts/verify-solana.ts"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@types/qrcode": "^1.5.6",
+    "bs58": "^6.0.0",
+    "clsx": "^2.1.1",
+    "framer-motion": "^13.0.0",
+    "lucide-react": "^1.30.0",
+    "next": "16.3.0",
+    "qrcode": "^1.5.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.11",
+    "typescript": "^5"
+  }
+}
