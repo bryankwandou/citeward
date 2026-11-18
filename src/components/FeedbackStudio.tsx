@@ -262,6 +262,10 @@ export function FeedbackStudio() {
       setTitle(data.parsed.extractedTitle || file.name.replace(/\.[^.]+$/, ''));
       setAuthor(`Uploaded ${String(data.parsed.fileType).toUpperCase()} Manuscript`);
       setText(data.parsed.text);
+      if (Array.isArray(data.liveSources) && data.liveSources.length > 0) {
+        setExtraFetchedSources(data.liveSources);
+        setLiveWebSourcesCount(data.liveSources.length);
+      }
       setUploadMeta({
         fileName: data.parsed.fileName,
         fileType: String(data.parsed.fileType).toUpperCase(),

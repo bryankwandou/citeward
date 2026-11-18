@@ -7,11 +7,13 @@ import { findBibliographyStart } from './similarity-engine';
  */
 export function extractSearchQueries(text: string): string[] {
   const bibStart = findBibliographyStart(text);
-  const body = text.slice(0, bibStart).trim() || text;
+  // Skip cover-page boilerplate on long manuscripts (>2000 chars)
+  const startOffset = bibStart > 2500 ? 400 : 0;
+  const body = text.slice(startOffset, bibStart).trim() || text;
   const sentences = body
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 40 && s.length <= 260);
+    .split(/(?<=[.!?])\s+|\r?\n+/)
+    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .filter((s) => s.length >= 45 && s.length <= 240);
 
   if (sentences.length === 0) {
     const words = body.split(/\s+/).slice(0, 14).join(' ');
@@ -19,9 +21,12 @@ export function extractSearchQueries(text: string): string[] {
   }
 
   const picked: string[] = [];
-  picked.push(sentences[0].slice(0, 140));
-  if (sentences.length > 2) {
-    picked.push(sentences[Math.floor(sentences.length / 2)].slice(0, 140));
+  picked.push(sentences[0].slice(0, 130));
+  if (sentences.length > 3) {
+    picked.push(sentences[Math.floor(sentences.length * 0.35)].slice(0, 130));
+  }
+  if (sentences.length > 7) {
+    picked.push(sentences[Math.floor(sentences.length * 0.7)].slice(0, 130));
   }
   return Array.from(new Set(picked));
 }
@@ -143,10 +148,11 @@ async function fetchCrossref(query: string): Promise<CorpusSource[]> {
   }
 }
 
-async function fetchWikipedia(query: string): Promise<CorpusSource[]> {
+async function fetchWikipedia(query: string, lang: 'en' | 'id' = 'en'): Promise<CorpusSource[]> {
   try {
     const shortQuery = query.split(/\s+/).slice(0, 8).join(' ');
-    const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
+    const host = lang === 'id' ? 'id.wikipedia.org' : 'en.wikipedia.org';
+    const url = `https://${host}/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
       shortQuery
     )}&srlimit=3&format=json&origin=*`;
     const res = await fetch(url, {
@@ -169,14 +175,17 @@ async function fetchWikipedia(query: string): Promise<CorpusSource[]> {
 
       const title = String(h.title || 'Wikipedia Article');
       sources.push({
-        id: `wiki-${h.pageid || title.replace(/\s+/g, '-').toLowerCase()}`,
+        id: `wiki-${lang}-${h.pageid || title.replace(/\s+/g, '-').toLowerCase()}`,
         title,
         authors: 'Wikipedia Contributors',
-        publication: 'English Wikipedia Open Encyclopedia',
+        publication:
+          lang === 'id'
+            ? 'Wikipedia Bahasa Indonesia Encyclopedia'
+            : 'English Wikipedia Open Encyclopedia',
         year: 2026,
-        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`,
+        url: `https://${host}/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`,
         category: 'internet',
-        repository: 'Wikipedia Live API',
+        repository: `Wikipedia (${lang.toUpperCase()}) Live API`,
         text: `${title}. ${snippet}`,
       });
     }
@@ -187,21 +196,25 @@ async function fetchWikipedia(query: string): Promise<CorpusSource[]> {
 }
 
 /**
- * Queries OpenAlex, Crossref, and Wikipedia in parallel for the manuscript's keyphrases.
+ * Queries OpenAlex, Crossref, and Wikipedia (EN + ID) in parallel for the manuscript's keyphrases.
  */
 export async function fetchLiveCandidateSources(text: string): Promise<CorpusSource[]> {
   const queries = extractSearchQueries(text);
   if (queries.length === 0) return [];
 
   const q0 = queries[0];
-  const [oa, cr, wk] = await Promise.all([
+  const isId = /\b(yang|dan|dalam|untuk|penelitian|pada|dengan|terhadap)\b/i.test(
+    text.slice(0, 2000)
+  );
+  const [oa, cr, wkEn, wkId] = await Promise.all([
     fetchOpenAlex(q0),
     fetchCrossref(q0),
-    fetchWikipedia(q0),
+    fetchWikipedia(q0, 'en'),
+    isId ? fetchWikipedia(q0, 'id') : Promise.resolve([]),
   ]);
 
   const dedup = new Map<string, CorpusSource>();
-  for (const s of [...oa, ...cr, ...wk]) {
+  for (const s of [...oa, ...cr, ...wkId, ...wkEn]) {
     if (!dedup.has(s.id)) {
       dedup.set(s.id, s);
     }

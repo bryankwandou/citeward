@@ -474,9 +474,13 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 
       if (tok[3] !== undefined && full.endsWith('Tm')) {
         const tmY = parseFloat(tok[3]);
-        if (lastTmY !== null && Math.abs(tmY - lastTmY) > 1.5) {
+        if (lastTmY !== null && Math.abs(tmY - lastTmY) > 2.0) {
           if (currentLine.trim()) lines.push(currentLine.trim());
           currentLine = '';
+          // Insert blank line marker on larger vertical paragraph/heading gaps
+          if (Math.abs(tmY - lastTmY) > 18) {
+            lines.push('');
+          }
         } else if (currentLine && !currentLine.endsWith(' ')) {
           currentLine += ' ';
         }
@@ -486,9 +490,12 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 
       if (tok[2] !== undefined && /T[dD]$/.test(full)) {
         const dy = parseFloat(tok[2]);
-        if (Math.abs(dy) > 1.5) {
+        if (Math.abs(dy) > 2.0) {
           if (currentLine.trim()) lines.push(currentLine.trim());
           currentLine = '';
+          if (Math.abs(dy) > 18) {
+            lines.push('');
+          }
         } else if (currentLine && !currentLine.endsWith(' ')) {
           currentLine += ' ';
         }
@@ -506,7 +513,7 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
             currentLine += decodePdfHexString(part[2], cmap);
           } else if (part[3] !== undefined) {
             const kern = parseFloat(part[3]);
-            if (kern < -120 && !currentLine.endsWith(' ')) {
+            if (kern <= -65 && !currentLine.endsWith(' ')) {
               currentLine += ' ';
             }
           }
@@ -529,22 +536,32 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
     }
   }
 
-  // Group extracted PDF lines into clean paragraphs
-  const cleanedLines = lines
-    .map((l) => l.replace(/\s+/g, ' ').trim())
-    .filter((l) => l.length > 0);
+  // Group extracted PDF lines into clean paragraphs while preserving headings and Daftar Pustaka / References
+  const HEADING_REGEX =
+    /^(?:BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Daftar\s+Pustaka|References|Bibliography|Bibliografi|Works\s+Cited|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup|\[\d+\])/i;
 
   const paragraphs: string[] = [];
   let buf = '';
-  for (const line of cleanedLines) {
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+/g, ' ').trim();
+    if (!line) {
+      if (buf) {
+        paragraphs.push(buf);
+        buf = '';
+      }
+      continue;
+    }
     if (!buf) {
       buf = line;
-    } else if (/^(\[\d+\]|\d+\.|References|Bibliography|Abstract|Introduction)/i.test(line)) {
+    } else if (HEADING_REGEX.test(line)) {
+      paragraphs.push(buf);
+      buf = line;
+    } else if (HEADING_REGEX.test(buf) && buf.length < 90) {
       paragraphs.push(buf);
       buf = line;
     } else if (buf.endsWith('-')) {
       buf = buf.slice(0, -1) + line;
-    } else if (/[.!?"]$/.test(buf) && line.length < 65) {
+    } else if (/[.!?"]$/.test(buf) && (line.length < 75 || /^[A-Z0-9"“(\[]/.test(line))) {
       paragraphs.push(buf);
       buf = line;
     } else {
