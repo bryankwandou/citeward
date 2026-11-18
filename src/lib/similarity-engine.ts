@@ -4,6 +4,7 @@ export interface ExclusionOptions {
   excludeQuotes: boolean;
   excludeBibliography: boolean;
   minWordMatch: number; // e.g., 8 words (0 = disabled -> min 3-word shingle)
+  minPercentMatch?: number; // Turnitin small-source threshold in % (0 = disabled, e.g., 1, 2, 3)
   denominatorMode?: 'total' | 'evaluable'; // 'total' divides by totalWords; 'evaluable' subtracts excluded quote/bib words
 }
 
@@ -69,6 +70,8 @@ export interface SentenceStylometry {
 
 export interface StylometricReport {
   overallAiPercent: number;
+  qualifyingAiWords: number;
+  turnitinAiIndicator: string; // '--' (<300w), '*%' (1..19%), or integer '0%'..'100%'
   burstinessScore: number; // CV = stdDev / mean sentence length
   meanSentenceLength: number;
   sentenceLengthStdDev: number;
@@ -89,6 +92,7 @@ export interface IntegrityAuditResult {
   quotedWords: number;
   bibliographyWords: number;
   overallSimilarityPercent: number;
+  roundedSimilarityPercent: number; // Official Turnitin whole-integer rule (min 1% if matchedWords > 0)
   rawSimilarityPercent: number; // Without quote/bib exclusions
   internetPercent: number;
   publicationsPercent: number;
@@ -155,14 +159,15 @@ const FORMULAIC_MARKERS: string[] = [
 ];
 
 const BIBLIOGRAPHY_HEADINGS_GLOBAL =
-  /^(?:\s*(?:bab\s+[ivx0-9]+\s*)?(?:\d+(?:\.\d+)*\s*)?)?(references|bibliography|daftar\s+pustaka|works\s+cited|bibliografi|referensi)\s*:?\s*$/gim;
+  /^(?:\s*(?:bab\s+[ivx0-9]+\s*)?(?:\d+(?:\.\d+)*\s*)?)?(references|bibliography|daftar\s+pustaka|daftar\s+referensi|works\s+cited|bibliografi|referensi|kepustakaan|rujukan)\s*:?\s*$/gim;
 
 /**
- * Detects character intervals inside quotation marks ("..." or “...”)
+ * Detects character intervals inside quotation marks ("...", “...”, «...»)
+ * as well as Markdown blockquotes (> ...).
  */
 export function findQuotedIntervals(text: string): Array<[number, number]> {
   const intervals: Array<[number, number]> = [];
-  const regex = /(?:"([^"]{15,})"|“([^”]{15,})”)/g;
+  const regex = /(?:"([^"]{15,})"|“([^”]{15,})”|«([^»]{15,})»|^\s*>\s+([^\r\n]{15,}))/gm;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
     intervals.push([m.index, m.index + m[0].length]);
@@ -695,7 +700,7 @@ export function evaluateStylometry(text: string): StylometricReport {
     const localVar =
       localLens.length > 1
         ? localLens.reduce((acc, l) => acc + Math.pow(l - localMean, 2), 0) /
-          localLens.length
+        localLens.length
         : 0;
     const localCv = localMean > 0 ? Math.sqrt(localVar) / localMean : burstinessScore;
     const effectiveCv = Math.min(burstinessScore, localCv);
@@ -765,14 +770,23 @@ export function evaluateStylometry(text: string): StylometricReport {
     };
   });
 
-  // Weight overall AI percent by sentence word counts + Turnitin paragraph concentration
-  const totalSentWords = sentences.reduce((a, s) => a + s.wordCount, 0) || 1;
+  // Weight overall AI percent by sentence word counts + Turnitin official indicator rules
+  const totalSentWords = sentences.reduce((a, s) => a + s.wordCount, 0) || 0;
+  const denomSentWords = Math.max(1, totalSentWords);
   const weightedAi =
-    sentences.reduce((acc, s) => acc + s.aiProbability * s.wordCount, 0) / totalSentWords;
+    sentences.reduce((acc, s) => acc + s.aiProbability * s.wordCount, 0) / denomSentWords;
 
   const overallAiPercent = Number(
     Math.max(0, Math.min(100, weightedAi >= 20 ? weightedAi : weightedAi * 0.45)).toFixed(1)
   );
+  const qualifyingAiWords = allWords.length;
+  const roundedAi = Math.round(overallAiPercent);
+  const turnitinAiIndicator =
+    qualifyingAiWords < 300
+      ? '--'
+      : roundedAi >= 1 && roundedAi < 20
+      ? '*%'
+      : `${roundedAi}%`;
 
   let verdictLabel = 'Authentic Human Cadence';
   let verdictSummary =
@@ -789,6 +803,8 @@ export function evaluateStylometry(text: string): StylometricReport {
 
   return {
     overallAiPercent,
+    qualifyingAiWords,
+    turnitinAiIndicator,
     burstinessScore,
     meanSentenceLength: Number(meanLen.toFixed(1)),
     sentenceLengthStdDev: Number(stdDev.toFixed(1)),
@@ -841,7 +857,7 @@ export function sha256Hex(ascii: string): string {
   words[words.length] = (asciiBitLength / maxWord) | 0;
   words[words.length] = asciiBitLength;
 
-  for (let j = 0; j < words.length; ) {
+  for (let j = 0; j < words.length;) {
     const w = words.slice(j, (j += 16));
     const oldHash = hash.slice(0);
 
@@ -861,10 +877,10 @@ export function sha256Hex(ascii: string): string {
           i < 16
             ? w[i]
             : (w[i - 16] +
-                (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
-                w[i - 7] +
-                (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
-              0);
+              (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+              w[i - 7] +
+              (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
+            0);
       const temp2 =
         (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
         ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
@@ -943,6 +959,8 @@ export function runManuscriptAudit(
     jaccard: number;
   }> = [];
 
+  const minPctThreshold = exclusions.minPercentMatch ?? 0;
+
   for (const source of combinedCorpus) {
     const { spans, winnowOverlap, jaccard } = alignSourceSpans(
       cleanText,
@@ -951,12 +969,21 @@ export function runManuscriptAudit(
       exclusions
     );
     if (spans.length > 0) {
-      const activeSpansForSource = spans.filter((s) => !s.excluded);
-      const activeWordCount = activeSpansForSource.reduce(
-        (acc, s) => acc + s.wordCount,
-        0
-      );
-      if (activeWordCount > 0 || spans.some((s) => !exclusions.excludeQuotes || !s.inQuote)) {
+      const uniqueActiveIndices = new Set<number>();
+      for (const sp of spans) {
+        if (sp.excluded) continue;
+        for (let w = sp.startWordIdx; w <= sp.endWordIdx; w++) {
+          const tok = docTokens[w];
+          if (!tok) continue;
+          if (exclusions.excludeQuotes && tok.inQuote) continue;
+          if (exclusions.excludeBibliography && tok.inBibliography) continue;
+          uniqueActiveIndices.add(w);
+        }
+      }
+      const activeWordCount = uniqueActiveIndices.size;
+      const sourcePct = totalWords === 0 ? 0 : (activeWordCount / evaluableWords) * 100;
+
+      if (activeWordCount > 0 && (minPctThreshold <= 0 || sourcePct >= minPctThreshold)) {
         rawMatches.push({
           source,
           spans,
@@ -1039,7 +1066,7 @@ export function runManuscriptAudit(
         ? 0
         : Number(((primaryCount / evaluableWords) * 100).toFixed(1));
 
-    if (activeUniqueCount > 0 || rankedSpans.length > 0) {
+    if (activeUniqueCount > 0) {
       sources.push({
         source: item.source,
         rank,
@@ -1057,11 +1084,15 @@ export function runManuscriptAudit(
 
   // Sort activeSpans by startChar for rendering cleanly in Document Viewer
   activeSpans.sort((a, b) => a.startChar - b.startChar || b.wordCount - a.wordCount);
-  allSpans.sort((a, b) => a.startChar - b.startChar || b.wordCount - a.wordCount);
+  allSpans.sort((a, b) => a.startChar - a.startChar || b.wordCount - a.wordCount);
 
   const matchedWords = matchedWordSet.size;
-  const overallSimilarityPercent =
-    totalWords === 0 ? 0 : Number(((matchedWords / evaluableWords) * 100).toFixed(1));
+  const rawPercentFloat = totalWords === 0 ? 0 : (matchedWords / evaluableWords) * 100;
+  const overallSimilarityPercent = Number(rawPercentFloat.toFixed(1));
+  const roundedSimilarityPercent =
+    totalWords === 0 || matchedWords === 0
+      ? 0
+      : Math.min(100, Math.max(1, Math.round(rawPercentFloat)));
   const rawSimilarityPercent =
     totalWords === 0
       ? 0
@@ -1088,6 +1119,7 @@ export function runManuscriptAudit(
     quotedWords,
     bibliographyWords,
     overallSimilarityPercent,
+    roundedSimilarityPercent,
     rawSimilarityPercent,
     internetPercent,
     publicationsPercent,

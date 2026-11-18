@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { CorpusSource } from '@/lib/corpus';
-import { fetchLiveCandidateSources } from '@/lib/live-sources';
+import { fetchLiveCandidateSourcesDetailed } from '@/lib/live-sources';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
 
 const InspectSchema = z.object({
@@ -11,6 +11,7 @@ const InspectSchema = z.object({
       excludeQuotes: z.boolean().default(false),
       excludeBibliography: z.boolean().default(true),
       minWordMatch: z.number().min(0).max(50).default(8),
+      minPercentMatch: z.number().min(0).max(50).default(0),
       denominatorMode: z.enum(['total', 'evaluable']).default('total'),
     })
     .optional(),
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
         excludeQuotes: false,
         excludeBibliography: true,
         minWordMatch: 8,
+        minPercentMatch: 0,
         denominatorMode: 'total' as const,
       },
       excludedSourceIds = [],
@@ -115,8 +117,16 @@ export async function POST(req: NextRequest) {
     } = parsed.data;
 
     let liveSources: CorpusSource[] = [];
+    let liveSourceStats = {
+      totalFetched: 0,
+      apisSucceeded: [] as string[],
+      doisResolved: 0,
+      urlsResolved: 0,
+    };
     if (includeLiveWeb) {
-      liveSources = await fetchLiveCandidateSources(text);
+      const detailed = await fetchLiveCandidateSourcesDetailed(text);
+      liveSources = detailed.sources;
+      liveSourceStats = detailed.stats;
     }
 
     const combinedExtra: CorpusSource[] = [...customSources, ...liveSources];
@@ -134,6 +144,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       liveSourcesFetched: liveSources.length,
+      liveSources,
+      liveSourceStats,
       editorialCritique,
       audit,
     });

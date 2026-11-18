@@ -1,5 +1,10 @@
 import { SAMPLE_MANUSCRIPTS } from '../src/lib/corpus';
-import { extractCitedDois, extractSearchQueries } from '../src/lib/live-sources';
+import {
+  extractBibliographyQueries,
+  extractCitedDois,
+  extractCitedUrls,
+  extractSearchQueries,
+} from '../src/lib/live-sources';
 import {
   computeWinnowFingerprints,
   runManuscriptAudit,
@@ -234,6 +239,59 @@ async function main() {
   );
   console.log(
     `[PASS] All 5 Turnitin Benchmarks (0.0% Delta), Set-Union Exclusion (${baseAudit.overallSimilarityPercent}% -> ${withoutTop1.overallSimilarityPercent}%), Evaluable Denominator (${evaluableDenomAudit.overallSimilarityPercent}%), and DOI/Chunk Extraction verified.`
+  );
+
+  console.log('=== 7. Verifying Turnitin Integer Rounding, Source-% Thresholds, Zero Ghost Rows, AI <300w Policy & URL Extractors ===');
+  assert(
+    baseAudit.roundedSimilarityPercent === 42,
+    `Expected Turnitin rounded integer 42% for 41.8%, got ${baseAudit.roundedSimilarityPercent}%`
+  );
+
+  const pctFiltered = runManuscriptAudit(SAMPLE_MANUSCRIPTS[0].text, {
+    excludeQuotes: true,
+    excludeBibliography: true,
+    minWordMatch: 8,
+    minPercentMatch: 15,
+  });
+  assert(
+    pctFiltered.sources.every((s) => s.similarityPercent >= 15) &&
+      pctFiltered.sources.length < baseAudit.sources.length,
+    `Expected minPercentMatch=15 to drop sub-15% sources (${baseAudit.sources.length} -> ${pctFiltered.sources.length})`
+  );
+
+  const sample03Exc = runManuscriptAudit(SAMPLE_MANUSCRIPTS[2].text, {
+    excludeQuotes: true,
+    excludeBibliography: true,
+    minWordMatch: 8,
+  });
+  assert(
+    sample03Exc.sources.length === 0,
+    `Expected zero phantom 0% rows when Quotes+Bib excluded on Sample 03, got ${sample03Exc.sources.length}`
+  );
+
+  const shortAiAudit = runManuscriptAudit(
+    'In the rapidly evolving landscape, artificial intelligence plays a pivotal role in academic integrity systems.',
+    { excludeQuotes: true, excludeBibliography: true, minWordMatch: 8 }
+  );
+  assert(
+    shortAiAudit.stylometry.turnitinAiIndicator === '--',
+    `Expected Turnitin AI indicator '--' under 300 words, got ${shortAiAudit.stylometry.turnitinAiIndicator}`
+  );
+
+  const urlBibDoc = `Introduction section discussing document fingerprinting algorithms.
+  References
+  [1] Author A. (2023). "Evaluasi Sistem Informasi Manajemen Portofolio Mahasiswa." https://ejournal.example.ac.id/paper1`;
+  assert(
+    extractCitedUrls(urlBibDoc).some((u) => u.includes('ejournal.example.ac.id')),
+    'Expected cited HTTPS URL extraction from References'
+  );
+  assert(
+    extractBibliographyQueries(urlBibDoc).length >= 1,
+    'Expected bibliography title extraction from References'
+  );
+
+  console.log(
+    `[PASS] Official Turnitin Integer (${baseAudit.roundedSimilarityPercent}%), Source-% Filter (${baseAudit.sources.length} -> ${pctFiltered.sources.length}), 0 Ghost Rows, AI <300w='--' & URL/Bib Extractors verified.`
   );
 }
 

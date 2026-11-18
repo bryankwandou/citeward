@@ -44,6 +44,7 @@ const PHASES = [
 export function ManuscriptPrismCanvas({ className = '' }: { className?: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const lastPhaseRef = useRef<number>(0);
   const [activePhaseIdx, setActivePhaseIdx] = useState(0);
   const [paused, setPaused] = useState(false);
   const [manualTime, setManualTime] = useState<number | null>(null);
@@ -194,7 +195,11 @@ export function ManuscriptPrismCanvas({ className = '' }: { className?: string }
       const pIdx = PHASES.findIndex(
         (p) => elapsedSec >= p.range[0] && elapsedSec < p.range[1]
       );
-      setActivePhaseIdx(pIdx >= 0 ? pIdx : 0);
+      const nextPhase = pIdx >= 0 ? pIdx : 0;
+      if (nextPhase !== lastPhaseRef.current) {
+        lastPhaseRef.current = nextPhase;
+        setActivePhaseIdx(nextPhase);
+      }
 
       // Subtle architectural calibration grid
       const centerX = width * 0.5;

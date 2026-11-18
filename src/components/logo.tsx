@@ -112,9 +112,6 @@ export function CitewardLogo({
         <span className="flex flex-col leading-none">
           <span className="font-semibold tracking-tight text-[1.05rem] text-[var(--cw-ink)] flex items-center gap-1.5">
             <span>Citeward</span>
-            <span className="cw-mono text-[10px] uppercase tracking-[0.14em] px-1.5 py-0.5 rounded-[3px] bg-[var(--cw-sunken)] text-[var(--cw-ink-3)] border border-[var(--cw-rule)]">
-              OSS v1.4
-            </span>
           </span>
           {subtitle && (
             <span className="text-[11px] text-[var(--cw-ink-3)] mt-0.5 tracking-normal">

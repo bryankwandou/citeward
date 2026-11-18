@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createDocxBuffer, parseDocumentBuffer } from '@/lib/document-parser';
 import { SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
-import { fetchLiveCandidateSources } from '@/lib/live-sources';
+import { fetchLiveCandidateSourcesDetailed } from '@/lib/live-sources';
 import {
   analyzeAiTells,
   scanDocumentManipulations,
@@ -112,13 +112,15 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const liveSources = await fetchLiveCandidateSources(parsed.text);
+      const liveResult = await fetchLiveCandidateSourcesDetailed(parsed.text);
+      const liveSources = liveResult.sources;
       const audit = runManuscriptAudit(
         parsed.text,
         {
           excludeQuotes: true,
           excludeBibliography: true,
           minWordMatch: 8,
+          minPercentMatch: 0,
         },
         liveSources
       );
@@ -129,6 +131,7 @@ export async function POST(req: NextRequest) {
         ok: true,
         parsed,
         liveSources,
+        liveSourceStats: liveResult.stats,
         audit,
         forensics: { manip, tells },
       });

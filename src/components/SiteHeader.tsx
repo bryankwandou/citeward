@@ -11,12 +11,7 @@ type ThemeMode = 'system' | 'light' | 'dark';
 export function SiteHeader() {
   const pathname = usePathname();
   const { locale, setLocale } = useI18n();
-
   const [theme, setTheme] = useState<ThemeMode>('system');
-  const [devnetInfo, setDevnetInfo] = useState<{
-    address: string | null;
-    balanceSol: number;
-  }>({ address: '8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY', balanceSol: 12.5 });
 
   useEffect(() => {
     try {
@@ -26,18 +21,6 @@ export function SiteHeader() {
         document.documentElement.dataset.theme = saved;
       }
     } catch {}
-
-    fetch('/api/solana')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d?.ok && d?.status?.address) {
-          setDevnetInfo({
-            address: d.status.address,
-            balanceSol: d.status.balanceSol,
-          });
-        }
-      })
-      .catch(() => {});
   }, []);
 
   const applyTheme = (next: ThemeMode) => {
@@ -60,22 +43,18 @@ export function SiteHeader() {
     { href: '/paraphrase', label: 'Paraphrase AI', exact: false },
     { href: '/matrix', label: 'Cohort Matrix', exact: false },
     { href: '/verify', label: 'Verify Receipt', exact: false },
-    { href: '/deck', label: 'Benchmarks', exact: false },
+    { href: '/deck', label: 'Formula & Proof', exact: false },
   ];
-
-  const shortAddr = devnetInfo.address
-    ? `${devnetInfo.address.slice(0, 4)}…${devnetInfo.address.slice(-4)}`
-    : 'Devnet';
 
   return (
     <header
       className="sticky top-0 border-b border-[var(--cw-rule-2)] bg-[var(--cw-raised)]/95 backdrop-blur-md"
       style={{ zIndex: 'var(--z-sticky)' }}
     >
-      <div className="max-w-[1420px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-5 min-w-0">
+      <div className="max-w-[1380px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-6 min-w-0">
           <Link href="/" className="focus:outline-none shrink-0">
-            <CitewardLogo size={28} subtitle="Open Similarity Studio" />
+            <CitewardLogo size={26} />
           </Link>
 
           <nav aria-label="Primary navigation" className="hidden lg:flex items-center gap-1">
@@ -101,27 +80,6 @@ export function SiteHeader() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {pathname !== '/studio' && (
-            <Link href="/studio" className="cw-btn-primary !py-1.5 !px-3.5 text-xs">
-              <span>Launch Turnitin Studio</span>
-            </Link>
-          )}
-
-          <Link
-            href="/verify"
-            title={
-              devnetInfo.address
-                ? `Solana Devnet Notary Issuer: ${devnetInfo.address}`
-                : 'Solana Devnet Notary'
-            }
-            className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[11px] cw-mono text-[var(--cw-ink-2)] hover:border-[var(--cw-signal)]"
-          >
-            <span className="cw-pulse-dot" aria-hidden="true" />
-            <span>{shortAddr}</span>
-            <span className="text-[var(--cw-rule-2)]">·</span>
-            <span className="font-semibold text-[var(--cw-ink)]">Devnet</span>
-          </Link>
-
           <label htmlFor="cw-locale-select" className="sr-only">
             Select interface language
           </label>
@@ -142,7 +100,7 @@ export function SiteHeader() {
           <div
             role="radiogroup"
             aria-label="Color theme mode"
-            className="hidden sm:inline-flex items-center rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-paper)] p-0.5"
+            className="inline-flex items-center rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-paper)] p-0.5"
           >
             {(['light', 'dark'] as ThemeMode[]).map((m) => (
               <button
