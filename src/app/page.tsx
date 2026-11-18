@@ -151,13 +151,13 @@ export default function HomePage() {
                 {t.hero.lead}
               </p>
 
-              {/* Terminal Quick-Verify Command Bar (SpliceCraft style) */}
+              {/* Terminal Quick-Verify Command Bar (Archival Sunken Surface — Zero Dark Island) */}
               <div
-                className="cw-enter flex items-center justify-between gap-2 rounded-[8px] bg-[#0C0D0F] text-[#F3F2EE] p-2 pl-4 border border-[#2A303D] max-w-[560px]"
+                className="cw-enter flex items-center justify-between gap-2 rounded-[8px] bg-[var(--cw-sunken)] text-[var(--cw-ink)] p-2 pl-4 border border-[var(--cw-rule-2)] max-w-[560px]"
                 style={{ '--cw-delay': '180ms' } as React.CSSProperties}
               >
                 <code className="cw-mono text-xs overflow-x-auto whitespace-nowrap">
-                  <span className="text-[#2AD0F0] mr-2">$</span>
+                  <span className="text-[var(--cw-corpus-ink)] font-bold mr-2">$</span>
                   {cliCommand}
                 </code>
                 <button
@@ -167,11 +167,11 @@ export default function HomePage() {
                     setCopiedCmd(true);
                     setTimeout(() => setCopiedCmd(false), 1600);
                   }}
-                  className="cw-mono text-xs px-3 py-1.5 rounded-[5px] bg-[#1E2433] hover:bg-[#1939B7] text-white font-semibold shrink-0 cursor-pointer transition-colors inline-flex items-center gap-1.5"
+                  className="cw-mono text-xs px-3 py-1.5 rounded-[5px] bg-[var(--cw-raised)] hover:bg-[var(--cw-signal)] text-[var(--cw-ink)] hover:text-white border border-[var(--cw-rule-2)] font-semibold shrink-0 cursor-pointer transition-colors inline-flex items-center gap-1.5"
                 >
                   {copiedCmd ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-[#3DD68C]" />
+                      <Check className="w-3.5 h-3.5 text-[var(--cw-good)]" />
                       <span>Copied</span>
                     </>
                   ) : (

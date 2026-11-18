@@ -478,7 +478,29 @@ body::before {
   text-underline-offset: 4px;
 }
 
-/* ── Focus Ring & Interactive Controls ───────────────────────────────────── */
+/* ── Focus Ring, Skip Link & Interactive Controls ────────────────────────── */
+.cw-skip {
+  position: fixed;
+  top: -100px;
+  left: 8px;
+  z-index: 160;
+  padding: 8px 14px;
+  border-radius: var(--cw-r-sm);
+  background-color: var(--cw-signal);
+  color: #FFFFFF;
+  font-family: var(--cw-font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 140ms var(--cw-ease);
+}
+
+.cw-skip:focus {
+  top: 8px;
+  outline: 2px solid var(--cw-paper);
+  outline-offset: 2px;
+}
+
 :focus-visible {
   outline: 2px solid var(--cw-signal);
   outline-offset: 2px;

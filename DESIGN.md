@@ -84,3 +84,4 @@ Numbered source match groups (`#1` through `#6+`) inside the Turnitin-style Docu
 
 - **Default locale:** English (`en`), with instant client-side switching across English (`en`), Bahasa Indonesia (`id`), Español (`es`), and 日本語 (`ja`).
 - **Accessibility:** Visible `--cw-focus` ring on `:focus-visible`, `aria-expanded` + `aria-controls` on interactive disclosures, `aria-live="polite"` on scan status regions, and 3-state theme persistence (`system`, `light`, `dark`).
+

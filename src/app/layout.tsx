@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { I18nProvider } from '@/lib/i18n';
 import { SiteHeader } from '@/components/SiteHeader';
@@ -13,6 +13,15 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#FAF8F4' },
+    { media: '(prefers-color-scheme: dark)', color: '#0C0E12' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
+};
+
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
@@ -21,8 +30,9 @@ const THEME_INIT_SCRIPT = `
       document.documentElement.dataset.theme = t;
     }
     var l = localStorage.getItem('citeward_locale');
-    if (l === 'en' || l === 'id' || l === 'es' || l === 'ja') {
+    if (l === 'en' || l === 'id' || l === 'es' || l === 'ja' || l === 'de' || l === 'fr' || l === 'zh' || l === 'ar') {
       document.documentElement.lang = l;
+      document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
     }
   } catch (e) {}
 })();
@@ -45,9 +55,14 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-screen flex flex-col selection:bg-[var(--cw-signal-wash)] selection:text-[var(--cw-signal-ink)]">
+        <a className="cw-skip" href="#main">
+          Skip to main content
+        </a>
         <I18nProvider>
           <SiteHeader />
-          <main className="flex-1 relative z-10">{children}</main>
+          <main id="main" tabIndex={-1} className="flex-1 relative z-10 outline-none">
+            {children}
+          </main>
           <SiteFooter />
         </I18nProvider>
       </body>

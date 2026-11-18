@@ -494,3 +494,4 @@ export const OPEN_SOURCE_ECOSYSTEM_REGISTRY: OpenSourceToolEntry[] = [
     integrationStatus: 'Adapted in src/components/skiper/SkiperPrimitives.tsx',
   },
 ];
+

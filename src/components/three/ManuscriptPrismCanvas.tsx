@@ -436,3 +436,4 @@ export function ManuscriptPrismCanvas({ className = '' }: { className?: string }
     </div>
   );
 }
+
