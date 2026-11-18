@@ -142,7 +142,7 @@ export function FeedbackStudio() {
 
   const [selectedSourceRank, setSelectedSourceRank] = useState<number | null>(null);
   const [excludedSourceIds, setExcludedSourceIds] = useState<string[]>([]);
-  const [showInboxTable, setShowInboxTable] = useState<boolean>(true);
+  const [showInboxTable, setShowInboxTable] = useState<boolean>(false);
   const [uploadedInboxItems, setUploadedInboxItems] = useState<
     Array<{
       id: string;
@@ -649,129 +649,184 @@ export function FeedbackStudio() {
   }, [text, audit.activeSpans, audit.stylometry.sentences, activeTab]);
 
   return (
-    <section id="studio" className="py-14 border-t border-[var(--cw-rule)]">
-      <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
-        {/* Studio Header Row */}
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-6">
-          <div>
-            <div className="cw-kicker mb-2 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[var(--cw-corpus)]" />
-              <span>{t.studio.sectionKicker}</span>
-            </div>
-            <h2 className="cw-h1">{t.studio.sectionTitle}</h2>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,.docx,.odt,.rtf,.txt,.md,.tex,.csv,.json,.html"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingDoc}
-              className="cw-btn-ghost text-xs !py-2 !px-3 !border-[var(--cw-signal)] !text-[var(--cw-signal-ink)] font-semibold"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>
-                {uploadingDoc ? 'Extracting PDF/DOCX...' : 'Upload PDF / DOCX / TXT'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => triggerLiveWebScan(false)}
-              disabled={scanningWeb}
-              className="cw-btn-primary text-xs !py-2 !px-3.5"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${scanningWeb ? 'animate-spin' : ''}`} />
-              <span>{scanningWeb ? t.studio.runningAuditBtn : t.studio.runAuditBtn}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDownloadPdfReport}
-              className="cw-btn-ghost text-xs !py-2 !px-3"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{t.studio.exportPdfBtn}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleExportDocx}
-              className="cw-btn-ghost text-xs !py-2 !px-3"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Export .DOCX</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Dedicated PDF / DOCX / ODT / LaTeX Drag-and-Drop Ingestion Bar */}
+    <section
+      id="studio"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragOver(true);
+      }}
+      onDragLeave={() => setIsDragOver(false)}
+      onDrop={handleDropFile}
+      className="py-5"
+    >
+      <div className="max-w-[1420px] mx-auto px-4 sm:px-6">
+        {/* Compact Single-Row Turnitin Feedback Studio Action & Filter Bar */}
         <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragOver(true);
-          }}
-          onDragLeave={() => setIsDragOver(false)}
-          onDrop={handleDropFile}
-          className={`rounded-[10px] border-2 border-dashed p-4 mb-4 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
-            isDragOver
-              ? 'border-[var(--cw-signal)] bg-[var(--cw-signal-wash)]'
-              : 'border-[var(--cw-rule-2)] bg-[var(--cw-raised)]'
+          className={`rounded-[10px] border p-3.5 mb-4 transition-colors bg-[var(--cw-raised)] shadow-[var(--cw-e1)] space-y-3 ${
+            isDragOver ? 'border-2 border-dashed border-[var(--cw-signal)] bg-[var(--cw-signal-wash)]' : 'border-[var(--cw-rule-2)]'
           }`}
         >
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="w-10 h-10 rounded-[8px] bg-[var(--cw-corpus-wash)] border border-[var(--cw-corpus-rule)] text-[var(--cw-corpus-ink)] flex items-center justify-center shrink-0">
-              <Upload className="w-5 h-5" />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.docx,.odt,.rtf,.txt,.md,.tex,.csv,.json,.html"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingDoc}
+                className="cw-btn-primary text-xs !py-2 !px-3.5"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>
+                  {uploadingDoc ? 'Extracting PDF/DOCX...' : 'Upload File (.PDF / .DOCX)'}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowInboxTable((prev) => !prev)}
+                className={`cw-btn-ghost text-xs !py-2 !px-3 ${
+                  showInboxTable ? '!border-[var(--cw-signal)] !bg-[var(--cw-signal-wash)]' : ''
+                }`}
+              >
+                <span>
+                  {showInboxTable
+                    ? `Hide Submission Inbox (${inboxRows.length})`
+                    : `Submission Inbox & Samples (${inboxRows.length})`}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => triggerLiveWebScan(false)}
+                disabled={scanningWeb}
+                className="cw-btn-ghost text-xs !py-2 !px-3"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${scanningWeb ? 'animate-spin' : ''}`} />
+                <span>{scanningWeb ? t.studio.runningAuditBtn : 'Live DOI/Web Scan'}</span>
+              </button>
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-sm text-[var(--cw-ink)]">
-                  Upload or Drag &amp; Drop Manuscript File (.PDF, .DOCX, .ODT, .RTF, .TEX, .TXT)
+
+            <div className="flex flex-wrap items-center gap-2">
+              {benchmarkCalibration && (
+                <span className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[var(--cw-good-wash)] text-[var(--cw-good)] text-xs cw-mono font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>
+                    Turnitin Ref: {benchmarkCalibration.expected}% · Δ={benchmarkCalibration.delta}%
+                  </span>
                 </span>
-                <span className="cw-mono text-[11px] px-2 py-0.5 rounded bg-[var(--cw-sunken)] border border-[var(--cw-rule)] text-[var(--cw-ink-2)]">
-                  Max 15 MB · Instant Similarity &amp; AI-ish Audit
-                </span>
-              </div>
-              <p className="text-xs text-[var(--cw-ink-3)] mt-0.5">
-                Extracts raw paragraphs from PDF FlateDecode text streams and Word OpenXML (
-                <code className="cw-mono">word/document.xml</code>), then runs Rabin-Karp
-                Winnowing similarity + sentence burstiness AI-ish stylometry simultaneously.
-              </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleDownloadPdfReport}
+                className="cw-btn-ghost text-xs !py-2 !px-3"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Report (.PDF)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportDocx}
+                className="cw-btn-ghost text-xs !py-2 !px-3"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Export .DOCX</span>
+              </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingDoc}
-              className="cw-btn-primary text-xs !py-2 !px-3.5"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>
-                {uploadingDoc ? 'Extracting Document...' : 'Select .PDF or .DOCX File'}
+          {/* Compact Turnitin Exclusion Filters Row */}
+          <div className="pt-2.5 border-t border-[var(--cw-rule)] flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-4">
+              <span className="inline-flex items-center gap-1 cw-mono font-semibold text-[var(--cw-ink-3)] uppercase">
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Turnitin Filters:
               </span>
-            </button>
-            <a
-              href="/api/parse-document?sample=docx&id=sample-1-thesis"
-              download="citeward-sample-1-thesis.docx"
-              className="cw-btn-ghost text-xs !py-2 !px-3"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download Sample .DOCX</span>
-            </a>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer text-[var(--cw-ink-2)] hover:text-[var(--cw-ink)]">
+                <input
+                  type="checkbox"
+                  checked={exclusions.excludeQuotes}
+                  onChange={(e) =>
+                    setExclusions((prev) => ({ ...prev, excludeQuotes: e.target.checked }))
+                  }
+                  className="rounded accent-[var(--cw-signal)]"
+                />
+                <span>
+                  {t.studio.excludeQuotesLabel} ({audit.quotedWords}w)
+                </span>
+              </label>
+
+              <label className="inline-flex items-center gap-1.5 cursor-pointer text-[var(--cw-ink-2)] hover:text-[var(--cw-ink)]">
+                <input
+                  type="checkbox"
+                  checked={exclusions.excludeBibliography}
+                  onChange={(e) =>
+                    setExclusions((prev) => ({
+                      ...prev,
+                      excludeBibliography: e.target.checked,
+                    }))
+                  }
+                  className="rounded accent-[var(--cw-signal)]"
+                />
+                <span>
+                  {t.studio.excludeBibLabel} ({audit.bibliographyWords}w)
+                </span>
+              </label>
+
+              <div className="inline-flex items-center gap-1.5 text-[var(--cw-ink-2)]">
+                <span>{t.studio.minWordsLabel}</span>
+                <select
+                  aria-label="Minimum word match threshold"
+                  value={exclusions.minWordMatch}
+                  onChange={(e) =>
+                    setExclusions((prev) => ({
+                      ...prev,
+                      minWordMatch: Number(e.target.value),
+                    }))
+                  }
+                  className="cw-mono text-xs px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[var(--cw-ink)]"
+                >
+                  <option value={0}>0 words</option>
+                  <option value={5}>5 words</option>
+                  <option value={8}>8 words (Turnitin Standard)</option>
+                  <option value={12}>12 words</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto">
+              {SAMPLE_MANUSCRIPTS.map((s, idx) => {
+                const active = selectedSampleId === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => handleSelectSample(s.id)}
+                    className={`cw-mono text-[11px] px-2 py-1 rounded border transition-colors cursor-pointer whitespace-nowrap ${
+                      active
+                        ? 'bg-[var(--cw-signal)] text-white border-[var(--cw-signal)] font-semibold'
+                        : 'bg-[var(--cw-sunken)] text-[var(--cw-ink-2)] border-[var(--cw-rule)] hover:border-[var(--cw-ink-3)]'
+                    }`}
+                  >
+                    Sample 0{idx + 1}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         {/* Upload Telemetry Banner or Error Alert */}
         {uploadError && (
-          <div className="rounded-[8px] border border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] px-4 py-3 mb-4 text-xs font-medium flex items-center justify-between gap-3">
+          <div className="rounded-[8px] border border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] px-4 py-2.5 mb-4 text-xs font-medium flex items-center justify-between gap-3">
             <span>Document Upload Error: {uploadError}</span>
             <button
               type="button"
@@ -784,11 +839,11 @@ export function FeedbackStudio() {
         )}
 
         {uploadMeta && (
-          <div className="rounded-[8px] border border-[var(--cw-corpus-rule)] bg-[var(--cw-corpus-wash)] px-4 py-2.5 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="rounded-[8px] border border-[var(--cw-corpus-rule)] bg-[var(--cw-corpus-wash)] px-4 py-2 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex flex-wrap items-center gap-2 text-[var(--cw-corpus-ink)]">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span className="font-semibold">
-                [{uploadMeta.fileType} Extracted] {uploadMeta.fileName}
+                [{uploadMeta.fileType}] {uploadMeta.fileName}
               </span>
               <span className="cw-mono">
                 · {(uploadMeta.byteSize / 1024).toFixed(1)} KB · ~{uploadMeta.estimatedPages}{' '}
@@ -800,33 +855,27 @@ export function FeedbackStudio() {
                 Similarity: {audit.overallSimilarityPercent}%
               </span>
               <span className="text-[var(--cw-stylo-ink)]">
-                AI-ish Stylometry: {audit.stylometry.overallAiPercent}%
+                AI Writing: {audit.stylometry.overallAiPercent}%
               </span>
             </div>
           </div>
         )}
 
-        {/* Turnitin Assignment Submission Inbox Table (Class / Repository Folder View) */}
-        <div className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e1)] mb-6 overflow-hidden">
-          <div className="px-4 py-3 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
+        {/* Collapsible Turnitin Assignment Submission Inbox Table */}
+        {showInboxTable && (
+          <div className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] mb-4 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex flex-wrap items-center justify-between gap-3">
               <span className="cw-mono text-xs font-bold uppercase tracking-wider text-[var(--cw-ink)]">
-                Turnitin Assignment Submission Inbox ({inboxRows.length} Papers)
+                Turnitin Assignment Submission Inbox ({inboxRows.length} Manuscripts)
               </span>
-              <span className="cw-mono text-[11px] px-2 py-0.5 rounded bg-[var(--cw-raised)] border border-[var(--cw-rule)] text-[var(--cw-ink-3)]">
-                5-Band Color Scale: Blue (0%) · Green (1–24%) · Yellow (25–49%) · Orange (50–74%) · Red (75–100%)
-              </span>
+              <a
+                href="/api/parse-document?sample=docx&id=sample-1-thesis"
+                download="citeward-sample-1-thesis.docx"
+                className="cw-mono text-xs font-semibold text-[var(--cw-signal-ink)] hover:underline"
+              >
+                Download Sample .DOCX to Test Upload
+              </a>
             </div>
-            <button
-              type="button"
-              onClick={() => setShowInboxTable((prev) => !prev)}
-              className="cw-mono text-xs font-semibold text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
-            >
-              {showInboxTable ? 'Hide Submission Inbox' : 'Show Submission Inbox'}
-            </button>
-          </div>
-
-          {showInboxTable && (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
@@ -850,7 +899,7 @@ export function FeedbackStudio() {
                       Words
                     </th>
                     <th scope="col" className="py-2.5 px-3.5 text-right">
-                      Feedback Studio
+                      Action
                     </th>
                   </tr>
                 </thead>
@@ -878,19 +927,11 @@ export function FeedbackStudio() {
                           {row.title}
                         </td>
                         <td className="py-2.5 px-3.5 whitespace-nowrap">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`cw-mono font-bold px-2 py-0.5 rounded border text-xs ${band.bg}`}
-                            >
-                              {row.simPct.toFixed(1)}%
-                            </span>
-                            <div className="w-16 h-2 rounded-full bg-[var(--cw-sunken)] overflow-hidden hidden sm:block">
-                              <div
-                                className={`h-full ${band.barBg}`}
-                                style={{ width: `${Math.min(100, row.simPct)}%` }}
-                              />
-                            </div>
-                          </div>
+                          <span
+                            className={`cw-mono font-bold px-2 py-0.5 rounded border text-xs ${band.bg}`}
+                          >
+                            {row.simPct.toFixed(1)}%
+                          </span>
                         </td>
                         <td className="py-2.5 px-3.5 whitespace-nowrap">
                           <span className="cw-mono font-semibold px-2 py-0.5 rounded bg-[var(--cw-stylo-wash)] text-[var(--cw-stylo-ink)] border border-[var(--cw-stylo-rule)]">
@@ -910,6 +951,7 @@ export function FeedbackStudio() {
                               setText(row.text);
                               setExcludedSourceIds([]);
                               setSelectedSourceRank(null);
+                              setShowInboxTable(false);
                             }}
                             className={`px-2.5 py-1 rounded-[5px] font-semibold text-xs cursor-pointer transition-colors ${
                               isCurrent
@@ -917,7 +959,7 @@ export function FeedbackStudio() {
                                 : 'bg-[var(--cw-raised)] text-[var(--cw-signal-ink)] border border-[var(--cw-signal-rule)] hover:bg-[var(--cw-signal)] hover:text-white'
                             }`}
                           >
-                            {isCurrent ? 'Inspecting Active' : 'Open Feedback Studio'}
+                            {isCurrent ? 'Active' : 'Inspect Paper'}
                           </button>
                         </td>
                       </tr>
@@ -926,127 +968,13 @@ export function FeedbackStudio() {
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
-
-        {/* Preset Benchmark Selector Strip */}
-        <div className="rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] p-3 mb-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="cw-mono text-xs font-semibold text-[var(--cw-ink-2)] mr-1">
-              {t.studio.loadSampleLabel}
-            </span>
-            {SAMPLE_MANUSCRIPTS.map((s) => {
-              const active = selectedSampleId === s.id;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => handleSelectSample(s.id)}
-                  className={`text-xs px-2.5 py-1.5 rounded-[5px] border transition-colors cursor-pointer ${
-                    active
-                      ? 'bg-[var(--cw-signal)] text-white border-[var(--cw-signal)] font-medium'
-                      : 'bg-[var(--cw-raised)] text-[var(--cw-ink-2)] border-[var(--cw-rule)] hover:border-[var(--cw-ink-3)]'
-                  }`}
-                >
-                  {s.label}
-                </button>
-              );
-            })}
           </div>
+        )}
 
-          {/* Turnitin Ground-Truth Calibration Badge */}
-          {benchmarkCalibration && (
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[5px] bg-[var(--cw-good-wash)] border border-[var(--cw-good)]/30 text-[var(--cw-good)] text-xs cw-mono">
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                Turnitin Ref: {benchmarkCalibration.expected}% · Citeward:{' '}
-                {benchmarkCalibration.actual}% · Δ={benchmarkCalibration.delta}% (&lt;0.3% SLA)
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Turnitin Exclusion Filters Bar */}
-        <div className="rounded-[8px] border border-[var(--cw-rule)] bg-[var(--cw-raised)] px-4 py-2.5 mb-6 flex flex-wrap items-center justify-between gap-4 text-xs">
-          <div className="flex flex-wrap items-center gap-4">
-            <span className="inline-flex items-center gap-1.5 cw-mono font-semibold text-[var(--cw-ink-3)] uppercase">
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              Filters:
-            </span>
-
-            <label className="inline-flex items-center gap-2 cursor-pointer text-[var(--cw-ink-2)] hover:text-[var(--cw-ink)]">
-              <input
-                type="checkbox"
-                checked={exclusions.excludeQuotes}
-                onChange={(e) =>
-                  setExclusions((prev) => ({ ...prev, excludeQuotes: e.target.checked }))
-                }
-                className="rounded accent-[var(--cw-signal)]"
-              />
-              <span>
-                {t.studio.excludeQuotesLabel} ({audit.quotedWords}w)
-              </span>
-            </label>
-
-            <label className="inline-flex items-center gap-2 cursor-pointer text-[var(--cw-ink-2)] hover:text-[var(--cw-ink)]">
-              <input
-                type="checkbox"
-                checked={exclusions.excludeBibliography}
-                onChange={(e) =>
-                  setExclusions((prev) => ({
-                    ...prev,
-                    excludeBibliography: e.target.checked,
-                  }))
-                }
-                className="rounded accent-[var(--cw-signal)]"
-              />
-              <span>
-                {t.studio.excludeBibLabel} ({audit.bibliographyWords}w)
-              </span>
-            </label>
-
-            <div className="inline-flex items-center gap-1.5 text-[var(--cw-ink-2)]">
-              <span>{t.studio.minWordsLabel}</span>
-              <select
-                aria-label="Minimum word match threshold"
-                value={exclusions.minWordMatch}
-                onChange={(e) =>
-                  setExclusions((prev) => ({
-                    ...prev,
-                    minWordMatch: Number(e.target.value),
-                  }))
-                }
-                className="cw-mono text-xs px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[var(--cw-ink)]"
-              >
-                <option value={0}>0 words (No filter)</option>
-                <option value={5}>5 words</option>
-                <option value={8}>8 words (Turnitin Standard)</option>
-                <option value={12}>12 words</option>
-                <option value={16}>16 words</option>
-              </select>
-            </div>
-          </div>
-
-          <label className="inline-flex items-center gap-2 cursor-pointer text-[var(--cw-corpus-ink)] font-medium">
-            <input
-              type="checkbox"
-              checked={includeLiveWeb}
-              onChange={(e) => setIncludeLiveWeb(e.target.checked)}
-              className="rounded accent-[var(--cw-signal)]"
-            />
-            <span>{t.studio.liveWebToggle}</span>
-            {liveWebSourcesCount > 0 && (
-              <span className="cw-mono text-[11px] px-1.5 py-0.5 rounded bg-[var(--cw-corpus-wash)] border border-[var(--cw-corpus-rule)]">
-                +{liveWebSourcesCount} live
-              </span>
-            )}
-          </label>
-        </div>
-
-        {/* Main 7/5 Split Workspace: Manuscript Folio Left, Inspector Drawer Right */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Main Side-by-Side Split Workspace (md:grid-cols-12 so Laptop & Desktop are ALWAYS Side-by-Side!) */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
           {/* LEFT COLUMN (7 cols): Manuscript Folio Reader / Editor */}
-          <div className="lg:col-span-7 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden">
+          <div className="md:col-span-7 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden">
             {/* Manuscript Sheet Top Toolbar */}
             <div className="px-4 py-3 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
@@ -1191,7 +1119,7 @@ export function FeedbackStudio() {
           </div>
 
           {/* RIGHT COLUMN (5 cols): Turnitin-Style Match Overview & Stylometry Drawer */}
-          <div className="lg:col-span-5 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden">
+          <div className="md:col-span-5 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden">
             {/* Top Score Readout Banner */}
             <div className="p-5 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] grid grid-cols-2 gap-4">
               <div className="p-3.5 rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)]">

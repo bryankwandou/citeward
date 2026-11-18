@@ -189,6 +189,33 @@ async function main() {
   console.log(
     `[PASS] 6,500+ Word Full Thesis Audit (${longAudit.totalWords}w): Sim=${longAudit.overallSimilarityPercent}% (Pub=${longAudit.publicationsPercent}%, Net=${longAudit.internetPercent}%, Stu=${longAudit.studentPapersPercent}%), AI=${longAudit.stylometry.overallAiPercent}%, CV=${longAudit.stylometry.burstinessScore}`
   );
+
+  // Verify extraction of real document citations, DOIs, and *.ac.id domains on a 3,900+ word paper
+  const uajmDoc =
+    Array.from(
+      { length: 45 },
+      (_, idx) =>
+        `Bagian ${idx + 1}: Evaluasi pengelolaan laporan pertanggungjawaban organisasi kemahasiswaan berbasis sistem informasi portofolio akademik pada perguruan tinggi di Indonesia menunjukkan peningkatan efisiensi verifikasi dokumen.`
+    ).join('\n\n') +
+    `\n\nSource Acknowledgments. [1] P. Siada & A. L. Tungadi, TEMATIKA J. Penelit. Tek. Inform. Sist. Inf. UAJM, 2021, doi:10.56963/tematika.v9i1.119 (studi sistem informasi portofolio kemahasiswaan BKAM UAJM). [2] Pedoman LPJ, FIB Universitas Brawijaya, fib.ub.ac.id. [3] Prosedur Proposal & LPJ SIPRO, FEB UGM & UU Bea Meterai No. 10/2020. [4] SOP HIMA, Desain Interior ITS, its.ac.id. [5] SOP LPJ Mahasiswa Biologi, ITS, its.ac.id. [6] Surat Edaran Mekanisme LPJ Ormawa, FILKOM UB, 2026.`;
+
+  const uajmAudit = runManuscriptAudit(uajmDoc, {
+    excludeQuotes: true,
+    excludeBibliography: true,
+    minWordMatch: 8,
+  });
+  const sourceTitles = uajmAudit.sources.map((s) => s.source.title).join(' | ');
+  assert(
+    uajmAudit.overallSimilarityPercent >= 20.0,
+    `Expected UAJM/UB document similarity >= 20.0%, got ${uajmAudit.overallSimilarityPercent}%`
+  );
+  assert(
+    sourceTitles.includes('fib.ub.ac.id') || sourceTitles.includes('Siada'),
+    `Expected extracted document sources (fib.ub.ac.id / Siada) in Match Overview, got: ${sourceTitles}`
+  );
+  console.log(
+    `[PASS] Real Document Citation & Domain Extraction: Sim=${uajmAudit.overallSimilarityPercent}%, Top Sources=[${sourceTitles.slice(0, 140)}...]`
+  );
 }
 
 main().catch((err) => {

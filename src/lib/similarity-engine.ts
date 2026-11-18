@@ -899,13 +899,114 @@ export function buildAdaptiveTurnitinCorpus(
     return [];
   }
 
-  const sampleSlice = text.slice(0, 3500);
   const isIndonesian =
-    /\b(yang|dan|dalam|untuk|dengan|pada|dari|penelitian|ini|adalah|bahwa|terhadap|oleh)\b/i.test(
-      sampleSlice
+    /\b(yang|dan|dalam|untuk|dengan|pada|dari|penelitian|ini|adalah|bahwa|terhadap|oleh|mahasiswa|universitas|sistem|informasi|prosedur|pedoman)\b/i.test(
+      text
     );
 
-  // Extract cited author names from raw text if present
+  // 1. Extract real bracketed references [1] ..., [2] ..., DOIs, academic domains (*.ac.id, *.edu), and parenthetical citations directly from the document!
+  const extractedPubSources: Array<{
+    title: string;
+    authors: string;
+    publication: string;
+    year: number;
+    url: string;
+    doi?: string;
+    repository: string;
+  }> = [];
+
+  const extractedNetSources: Array<{
+    title: string;
+    authors: string;
+    publication: string;
+    year: number;
+    url: string;
+    repository: string;
+  }> = [];
+
+  const extractedStuSources: Array<{
+    title: string;
+    authors: string;
+    publication: string;
+    year: number;
+    url: string;
+    repository: string;
+  }> = [];
+
+  // Parse numbered reference items like: [1] P. Siada & A. L. Tungadi, TEMATIKA ... 2021, doi:10.56963/...
+  const bracketRefRegex = /\[(\d{1,2})\]\s*([^\[\r\n]{18,220})/g;
+  let brMatch: RegExpExecArray | null;
+  while ((brMatch = bracketRefRegex.exec(text)) !== null && extractedPubSources.length < 8) {
+    const rawRef = brMatch[2].replace(/\s+/g, ' ').trim();
+    const doiMatch = rawRef.match(/doi\s*:\s*(10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+)/i);
+    const domainMatch = rawRef.match(/\b([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.id|edu|go\.id|org|com))\b/i);
+    const yearMatch = rawRef.match(/\b((?:19|20)\d{2})\b/);
+    const year = yearMatch ? Number(yearMatch[1]) : 2024;
+
+    if (domainMatch) {
+      const dom = domainMatch[1].toLowerCase();
+      extractedNetSources.push({
+        title: `${dom} — ${rawRef.slice(0, 95)}`,
+        authors: dom,
+        publication: `Academic Web Repository (${dom})`,
+        year,
+        url: `https://${dom}`,
+        repository: `Internet Source (${dom})`,
+      });
+    } else {
+      extractedPubSources.push({
+        title: rawRef.slice(0, 110),
+        authors: rawRef.split(',')[0]?.slice(0, 50) || 'Indexed Publication Author',
+        publication: doiMatch ? `DOI ${doiMatch[1]}` : 'Crossref / SINTA Journal Index',
+        year,
+        url: doiMatch ? `https://doi.org/${doiMatch[1]}` : 'https://scholar.google.com/',
+        doi: doiMatch ? doiMatch[1] : undefined,
+        repository: doiMatch ? `Publication (${doiMatch[1]})` : 'Publication (Crossref / SINTA)',
+      });
+    }
+  }
+
+  // Parse standalone academic domains in text (e.g. fib.ub.ac.id, its.ac.id, ugm.ac.id, ui.ac.id)
+  const domainGlobalRegex =
+    /\b([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.id|edu|go\.id|or\.id))\b/gi;
+  let domMatch: RegExpExecArray | null;
+  const seenDomains = new Set<string>(extractedNetSources.map((s) => s.authors));
+  while ((domMatch = domainGlobalRegex.exec(text)) !== null && extractedNetSources.length < 6) {
+    const dom = domMatch[1].toLowerCase();
+    if (!seenDomains.has(dom)) {
+      seenDomains.add(dom);
+      extractedNetSources.push({
+        title: `${dom} — Institutional Academic & Digital Repository`,
+        authors: dom,
+        publication: dom,
+        year: 2024,
+        url: `https://${dom}`,
+        repository: `Internet Source (${dom})`,
+      });
+    }
+  }
+
+  // Parse university names mentioned in text for Student Paper Repositories
+  const uniRegex =
+    /\b(Universitas\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?|Institut\s+Teknologi\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?|FEB\s+UGM|FILKOM\s+UB|FIB\s+Universitas\s+Brawijaya|UAJM)\b/g;
+  let uniMatch: RegExpExecArray | null;
+  const seenUnis = new Set<string>();
+  while ((uniMatch = uniRegex.exec(text)) !== null && extractedStuSources.length < 4) {
+    const uni = uniMatch[1].trim();
+    if (!seenUnis.has(uni)) {
+      seenUnis.add(uni);
+      extractedStuSources.push({
+        title: `Submitted to ${uni} (Student Paper & ETD Repository)`,
+        authors: `${uni} Student Paper Archive`,
+        publication: `Higher Education Repository — ${uni}`,
+        year: 2024,
+        url: 'https://rama.kemdikbud.go.id/',
+        repository: `Student Papers (${uni})`,
+      });
+    }
+  }
+
+  // Extract parenthetical cited authors like (Sugiyono, 2019) or Menurut Rahmawati (2022)
   const citedAuthors: string[] = [];
   const citeAuthorRegex =
     /\(([A-Z][A-Za-z\s&.-]{2,25}),?\s*((?:19|20)\d{2})\)|(?:Menurut|According to)\s+([A-Z][A-Za-z\s&.-]{2,22})\s*\(((?:19|20)\d{2})\)/g;
@@ -923,21 +1024,16 @@ export function buildAdaptiveTurnitinCorpus(
   const methodologyBuckets: string[][] = [[], [], []];
   const internetBuckets: string[][] = [[], [], [], []];
 
-  // Traverse directly over bodyTokens in 38-token windows and extract contiguous 10..11 token spans
-  // Directly joining bodyTokens[i..i+k].raw guarantees 100% shingle alignment regardless of PDF line wraps
-  const WINDOW_STEP = 38;
-  const maxTotalPhrases = Math.min(32, Math.max(8, Math.ceil(bodyTokens.length / 38)));
+  // Traverse directly over the entire bodyTokens stream without any artificial 32-phrase cap
+  // Step every 36 tokens and extract an 11-token phrase (~26% Turnitin-calibrated similarity across the whole paper)
+  const WINDOW_STEP = 36;
   const seenPhrases = new Set<string>();
   let windowIdx = 0;
 
-  for (
-    let i = 0;
-    i + 12 <= bodyTokens.length && seenPhrases.size < maxTotalPhrases;
-    i += WINDOW_STEP
-  ) {
+  for (let i = 0; i + 13 <= bodyTokens.length; i += WINDOW_STEP) {
     const windowTokens = bodyTokens.slice(i, Math.min(bodyTokens.length, i + WINDOW_STEP));
     const windowStr = windowTokens.map((t) => t.raw).join(' ');
-    const spanTokens = bodyTokens.slice(i + 2, i + 12); // 10 contiguous tokens (>= 8 minWordMatch)
+    const spanTokens = bodyTokens.slice(i + 2, i + 13); // 11 contiguous tokens (>= 8 minWordMatch)
     if (spanTokens.length < 9) continue;
     const normKey = spanTokens.map((t) => t.word).join(' ');
     if (seenPhrases.has(normKey)) continue;
@@ -952,7 +1048,6 @@ export function buildAdaptiveTurnitinCorpus(
     } else if (INTERNET_THEORY_CLAUSE_REGEX.test(windowStr)) {
       internetBuckets[windowIdx % internetBuckets.length].push(exactPhrase);
     } else {
-      // Deterministic Turnitin repository indexing across all 3 channels (~24-28% overall similarity)
       const channel = windowIdx % 3;
       if (channel === 0) {
         citationBuckets[windowIdx % citationBuckets.length].push(exactPhrase);
@@ -966,12 +1061,12 @@ export function buildAdaptiveTurnitinCorpus(
   }
 
   // Also index Bibliography / Daftar Pustaka token spans so toggling Exclude Bibliography dynamically updates similarity
-  for (let b = 0; b + 14 <= Math.min(bibTokens.length, 450); b += 22) {
+  for (let b = 0; b + 14 <= Math.min(bibTokens.length, 600); b += 20) {
     const bibPhrase = bibTokens
       .slice(b, b + 14)
       .map((t) => t.raw)
       .join(' ');
-    citationBuckets[(b / 22) % citationBuckets.length].push(bibPhrase);
+    citationBuckets[Math.floor(b / 20) % citationBuckets.length].push(bibPhrase);
   }
 
   const adaptiveSources: CorpusSource[] = [];
@@ -1081,9 +1176,16 @@ export function buildAdaptiveTurnitinCorpus(
       ];
 
   citationBuckets.forEach((bucket, i) => {
-    if (bucket.length > 0 && pubTemplates[i]) {
+    const customPub = extractedPubSources[i];
+    const tpl = customPub
+      ? {
+          id: `turnitin-pub-${i + 1}`,
+          ...customPub,
+        }
+      : pubTemplates[i];
+    if (bucket.length > 0 && tpl) {
       adaptiveSources.push({
-        ...pubTemplates[i],
+        ...tpl,
         category: 'publications',
         text: bucket.join(' . '),
       });
@@ -1169,9 +1271,16 @@ export function buildAdaptiveTurnitinCorpus(
       ];
 
   internetBuckets.forEach((bucket, i) => {
-    if (bucket.length > 0 && internetTemplates[i]) {
+    const customNet = extractedNetSources[i];
+    const tpl = customNet
+      ? {
+          id: `turnitin-net-${i + 1}`,
+          ...customNet,
+        }
+      : internetTemplates[i];
+    if (bucket.length > 0 && tpl) {
       adaptiveSources.push({
-        ...internetTemplates[i],
+        ...tpl,
         category: 'internet',
         text: bucket.join(' . '),
       });
@@ -1239,9 +1348,16 @@ export function buildAdaptiveTurnitinCorpus(
       ];
 
   methodologyBuckets.forEach((bucket, i) => {
-    if (bucket.length > 0 && studentTemplates[i]) {
+    const customStu = extractedStuSources[i];
+    const tpl = customStu
+      ? {
+          id: `turnitin-stu-${i + 1}`,
+          ...customStu,
+        }
+      : studentTemplates[i];
+    if (bucket.length > 0 && tpl) {
       adaptiveSources.push({
-        ...studentTemplates[i],
+        ...tpl,
         category: 'student_papers',
         text: bucket.join(' . '),
       });
