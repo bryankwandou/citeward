@@ -24,6 +24,7 @@ import {
   MatchSpan,
   runManuscriptAudit,
 } from '@/lib/similarity-engine';
+import { scanDocumentManipulations } from '@/lib/forensics-and-ecosystem';
 import { useI18n } from '@/lib/i18n';
 
 function getTurnitinBandStyle(simPct: number): {
@@ -206,6 +207,7 @@ export function FeedbackStudio() {
   }, [text, exclusions, customSources, extraFetchedSources, excludedSourceIds]);
 
   const bandStyle = getTurnitinBandStyle(audit.overallSimilarityPercent);
+  const manipFlags = useMemo(() => scanDocumentManipulations(text), [text]);
 
   const aiBreakdown = useMemo(() => {
     const sents = audit.stylometry.sentences;
@@ -689,9 +691,9 @@ export function FeedbackStudio() {
               className="cw-mono text-xs px-2.5 py-2 rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-paper)] text-[var(--cw-ink)] font-medium cursor-pointer"
             >
               {!currentSample && <option value="">Uploaded Document</option>}
-              {SAMPLE_MANUSCRIPTS.map((s, idx) => (
+              {SAMPLE_MANUSCRIPTS.map((s) => (
                 <option key={s.id} value={s.id}>
-                  Sample 0{idx + 1}: {s.label}
+                  {s.label}
                 </option>
               ))}
             </select>
@@ -992,9 +994,14 @@ export function FeedbackStudio() {
                     const sp = seg.span;
                     const st = SERIES_STYLES[sp.colorIndex] || SERIES_STYLES[1];
                     const isSelected = selectedSourceRank === sp.sourceRank;
+                    const firstSpace = seg.text.search(/\s/);
+                    const firstWord =
+                      firstSpace === -1 ? seg.text : seg.text.slice(0, firstSpace);
+                    const restText = firstSpace === -1 ? '' : seg.text.slice(firstSpace);
                     return (
                       <mark
                         key={i}
+                        data-cw-rank={sp.sourceRank}
                         onClick={() => {
                           setActiveTab('sources');
                           setSelectedSourceRank(
@@ -1007,12 +1014,15 @@ export function FeedbackStudio() {
                           isSelected ? 'ring-2 ring-[var(--cw-signal)]' : ''
                         }`}
                       >
-                        <sup
-                          className={`cw-mono inline-flex items-center justify-center rounded-full text-[9px] font-bold px-1 min-w-[15px] h-[15px] mr-1 align-super leading-none select-none ${st.badge}`}
-                        >
-                          {sp.sourceRank}
-                        </sup>
-                        {seg.text}
+                        <span className="whitespace-nowrap">
+                          <sup
+                            className={`cw-mono inline-flex items-center justify-center rounded-full text-[9px] font-bold px-1 min-w-[15px] h-[15px] mr-1 align-super leading-none select-none ${st.badge}`}
+                          >
+                            {sp.sourceRank}
+                          </sup>
+                          {firstWord}
+                        </span>
+                        {restText}
                       </mark>
                     );
                   }
@@ -1131,19 +1141,19 @@ export function FeedbackStudio() {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="p-2 rounded-[6px] bg-[var(--cw-sunken)] border border-[var(--cw-rule)]">
                     <div className="cw-mono text-sm font-bold text-[var(--cw-ink)]">
-                      {audit.internetPercent}%
+                      {audit.internetPercent.toFixed(1)}%
                     </div>
                     <div className="text-[11px] text-[var(--cw-ink-3)]">Internet</div>
                   </div>
                   <div className="p-2 rounded-[6px] bg-[var(--cw-sunken)] border border-[var(--cw-rule)]">
                     <div className="cw-mono text-sm font-bold text-[var(--cw-ink)]">
-                      {audit.publicationsPercent}%
+                      {audit.publicationsPercent.toFixed(1)}%
                     </div>
                     <div className="text-[11px] text-[var(--cw-ink-3)]">Publications</div>
                   </div>
                   <div className="p-2 rounded-[6px] bg-[var(--cw-sunken)] border border-[var(--cw-rule)]">
                     <div className="cw-mono text-sm font-bold text-[var(--cw-ink)]">
-                      {audit.studentPapersPercent}%
+                      {audit.studentPapersPercent.toFixed(1)}%
                     </div>
                     <div className="text-[11px] text-[var(--cw-ink-3)]">Student Papers</div>
                   </div>
@@ -1286,9 +1296,18 @@ export function FeedbackStudio() {
                         >
                           <button
                             type="button"
-                            onClick={() =>
-                              setSelectedSourceRank(expanded ? null : item.rank)
-                            }
+                            onClick={() => {
+                              const next = expanded ? null : item.rank;
+                              setSelectedSourceRank(next);
+                              if (next !== null) {
+                                setViewerLayer('similarity');
+                                setTimeout(() => {
+                                  document
+                                    .querySelector(`[data-cw-rank="${next}"]`)
+                                    ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 40);
+                              }
+                            }}
                             aria-expanded={expanded}
                             className="w-full text-left p-3 flex items-start justify-between gap-2.5 cursor-pointer"
                           >
@@ -1510,6 +1529,22 @@ export function FeedbackStudio() {
                       <span>{benchmarkCalibration.delta}% Exact</span>
                     </div>
                   )}
+                </div>
+
+                {/* Turnitin Document Integrity Flags */}
+                <div
+                  className={`p-3 rounded-[8px] border cw-mono text-[11px] flex items-center justify-between ${
+                    manipFlags.homoglyphCount > 0 || manipFlags.zeroWidthCount > 0
+                      ? 'border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] font-semibold'
+                      : 'border-[var(--cw-rule)] bg-[var(--cw-paper)] text-[var(--cw-ink-2)]'
+                  }`}
+                >
+                  <span>Character Flags (Replaced / Hidden):</span>
+                  <span>
+                    {manipFlags.homoglyphCount + manipFlags.zeroWidthCount === 0
+                      ? '0 Flags (Clean)'
+                      : `${manipFlags.homoglyphCount} Homoglyphs · ${manipFlags.zeroWidthCount} Zero-Width`}
+                  </span>
                 </div>
               </div>
             )}
