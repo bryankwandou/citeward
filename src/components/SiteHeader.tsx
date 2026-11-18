@@ -24,7 +24,7 @@ export function SiteHeader() {
   const [devnetInfo, setDevnetInfo] = useState<{
     address: string | null;
     balanceSol: number;
-  }>({ address: 'AUo5...5AG7', balanceSol: 788.27 });
+  }>({ address: '8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY', balanceSol: 12.5 });
 
   useEffect(() => {
     try {

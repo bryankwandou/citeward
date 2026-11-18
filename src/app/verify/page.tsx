@@ -7,7 +7,7 @@ import { runManuscriptAudit, sha256Hex } from '@/lib/similarity-engine';
 
 export default function VerifyPage() {
   const [signatureInput, setSignatureInput] = useState<string>(
-    '2dHrqKz5qHU9hPeZiPxKPpUooQJH2zQQxz837aaYMBmXB4JMA46HYYupb9Ph5tLZn77BkZis7z5T5btEeTG2SFjn'
+    '26yrD358WWGpB2xfiZ6Xj5cjydHVcuXqUNMnHZYAWssKK6ReFwUHXDcYTWaJUirYXAbh3fEmuMdARG5Tbgq8PtnA'
   );
   const [verifying, setVerifying] = useState<boolean>(false);
   const [anchoringDemo, setAnchoringDemo] = useState<boolean>(false);

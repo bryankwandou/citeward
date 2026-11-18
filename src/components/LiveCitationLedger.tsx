@@ -14,7 +14,7 @@ interface StreamRow {
 
 const STREAM_ROWS: StreamRow[] = [
   {
-    id: 'AUo5…5AG7',
+    id: '8mKr…vHQY',
     manuscript: 'CS-402 · Winnowing Benchmark',
     targetWords: 347,
     channel: 'corpus',
@@ -117,7 +117,7 @@ export function LiveCitationLedger() {
           Live Inspection &amp; Notary Stream
         </span>
         <span className="cw-mono text-[11px] px-2 py-0.5 rounded bg-[var(--cw-signal-wash)] text-[var(--cw-signal-ink)] border border-[var(--cw-signal-rule)] font-semibold">
-          Solana Devnet · Slot #523536455
+          Solana Devnet · Slot #523579356
         </span>
       </div>
 

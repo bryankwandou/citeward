@@ -107,8 +107,8 @@ export function FeedbackStudio() {
     balanceSol: number;
     cluster: string;
   }>({
-    address: 'AUo5JFnRhLtD6PJaWDj98M2ZmHWbLPcrKiR2QPY95AG7',
-    balanceSol: 788.2697,
+    address: '8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY',
+    balanceSol: 12.5,
     cluster: 'devnet',
   });
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
@@ -382,10 +382,14 @@ export function FeedbackStudio() {
         const resp = await anyWin.solana.connect();
         setWalletAddress(resp.publicKey.toString());
       } else {
-        setWalletAddress(issuerInfo.address || 'AUo5JFnRhLtD6PJaWDj98M2ZmHWbLPcrKiR2QPY95AG7');
+        setWalletAddress(
+          issuerInfo.address || '8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY'
+        );
       }
     } catch {
-      setWalletAddress(issuerInfo.address || 'AUo5JFnRhLtD6PJaWDj98M2ZmHWbLPcrKiR2QPY95AG7');
+      setWalletAddress(
+        issuerInfo.address || '8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY'
+      );
     }
   };
 
