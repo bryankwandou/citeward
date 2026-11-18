@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createDocxBuffer, parseDocumentBuffer } from '@/lib/document-parser';
 import { SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
-import { inspectHomoglyphsAndAiTells } from '@/lib/forensics-and-ecosystem';
+import {
+  analyzeAiTells,
+  scanDocumentManipulations,
+} from '@/lib/forensics-and-ecosystem';
 
 const ALLOWED_EXTENSIONS = new Set([
   'pdf',
@@ -105,13 +108,14 @@ export async function POST(req: NextRequest) {
         excludeBibliography: true,
         minWordMatch: 8,
       });
-      const forensics = inspectHomoglyphsAndAiTells(parsed.text);
+      const manip = scanDocumentManipulations(parsed.text);
+      const tells = analyzeAiTells(manip.sanitizedText);
 
       return NextResponse.json({
         ok: true,
         parsed,
         audit,
-        forensics,
+        forensics: { manip, tells },
       });
     }
 
@@ -186,13 +190,14 @@ export async function POST(req: NextRequest) {
       excludeBibliography: true,
       minWordMatch: 8,
     });
-    const forensics = inspectHomoglyphsAndAiTells(parsed.text);
+    const manip = scanDocumentManipulations(parsed.text);
+    const tells = analyzeAiTells(manip.sanitizedText);
 
     return NextResponse.json({
       ok: true,
       parsed,
       audit,
-      forensics,
+      forensics: { manip, tells },
     });
   } catch (err) {
     return NextResponse.json(
@@ -207,3 +212,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
