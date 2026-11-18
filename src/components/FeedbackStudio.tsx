@@ -124,6 +124,19 @@ export function FeedbackStudio() {
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copiedHash, setCopiedHash] = useState<boolean>(false);
 
+  // Document Upload (PDF / DOCX / ODT / RTF / TXT) state
+  const [uploadingDoc, setUploadingDoc] = useState<boolean>(false);
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+  const [uploadMeta, setUploadMeta] = useState<{
+    fileName: string;
+    fileType: string;
+    byteSize: number;
+    estimatedPages: number;
+    wordCount: number;
+    warnings: string[];
+  } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Compute deterministic audit synchronously in real-time whenever text or exclusions change
@@ -226,16 +239,114 @@ export function FeedbackStudio() {
     setEditorialCritique('');
   };
 
+  const processUploadedFile = async (file: File) => {
+    setUploadingDoc(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/parse-document', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok || !data?.parsed?.text) {
+        throw new Error(
+          data?.error || 'Could not extract readable text from the uploaded file.'
+        );
+      }
+
+      setSelectedSampleId('custom-upload');
+      setTitle(data.parsed.extractedTitle || file.name.replace(/\.[^.]+$/, ''));
+      setAuthor(`Uploaded ${String(data.parsed.fileType).toUpperCase()} Manuscript`);
+      setText(data.parsed.text);
+      setUploadMeta({
+        fileName: data.parsed.fileName,
+        fileType: String(data.parsed.fileType).toUpperCase(),
+        byteSize: data.parsed.byteSize,
+        estimatedPages: data.parsed.estimatedPages,
+        wordCount: data.parsed.wordCount,
+        warnings: data.parsed.warnings || [],
+      });
+      setViewMode('annotated');
+      setSelectedSourceRank(null);
+      setAnchorResult(null);
+    } catch (err) {
+      // Fallback for plain text files if offline
+      const lower = file.name.toLowerCase();
+      if (
+        lower.endsWith('.txt') ||
+        lower.endsWith('.md') ||
+        lower.endsWith('.tex') ||
+        lower.endsWith('.csv')
+      ) {
+        const rawContent = await file.text();
+        setSelectedSampleId('custom-upload');
+        setTitle(file.name.replace(/\.[^.]+$/, ''));
+        setAuthor('Uploaded Manuscript Draft');
+        setText(rawContent.slice(0, 120000));
+        setUploadMeta({
+          fileName: file.name,
+          fileType: 'TXT',
+          byteSize: file.size,
+          estimatedPages: Math.max(1, Math.ceil(rawContent.split(/\s+/).length / 280)),
+          wordCount: rawContent.split(/\s+/).filter(Boolean).length,
+          warnings: [],
+        });
+        setViewMode('annotated');
+        setAnchorResult(null);
+      } else {
+        setUploadError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to parse PDF/DOCX document.'
+        );
+      }
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const rawContent = await file.text();
-    setSelectedSampleId('custom-upload');
-    setTitle(file.name.replace(/\.[^.]+$/, ''));
-    setAuthor('Uploaded Manuscript Draft');
-    setText(rawContent.slice(0, 120000));
-    setViewMode('annotated');
-    setAnchorResult(null);
+    await processUploadedFile(file);
+    e.target.value = '';
+  };
+
+  const handleDropFile = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    await processUploadedFile(file);
+  };
+
+  const handleExportDocx = async () => {
+    try {
+      const res = await fetch('/api/parse-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'export-docx',
+          title,
+          author,
+          text,
+        }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `citeward-manuscript-${audit.documentHashSha256.slice(0, 8)}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Ignore network error
+    }
   };
 
   const handleAddCustomSource = (e: React.FormEvent) => {
@@ -405,17 +516,20 @@ export function FeedbackStudio() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,.md,.tex,.csv,.json,.html"
+              accept=".pdf,.docx,.odt,.rtf,.txt,.md,.tex,.csv,.json,.html"
               onChange={handleFileUpload}
               className="hidden"
             />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="cw-btn-ghost text-xs !py-2 !px-3"
+              disabled={uploadingDoc}
+              className="cw-btn-ghost text-xs !py-2 !px-3 !border-[var(--cw-signal)] !text-[var(--cw-signal-ink)] font-semibold"
             >
               <Upload className="w-3.5 h-3.5" />
-              <span>{t.studio.uploadFileBtn}</span>
+              <span>
+                {uploadingDoc ? 'Extracting PDF/DOCX...' : 'Upload PDF / DOCX / TXT'}
+              </span>
             </button>
 
             <button
@@ -436,8 +550,112 @@ export function FeedbackStudio() {
               <Download className="w-3.5 h-3.5" />
               <span>{t.studio.exportPdfBtn}</span>
             </button>
+
+            <button
+              type="button"
+              onClick={handleExportDocx}
+              className="cw-btn-ghost text-xs !py-2 !px-3"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>Export .DOCX</span>
+            </button>
           </div>
         </div>
+
+        {/* Dedicated PDF / DOCX / ODT / LaTeX Drag-and-Drop Ingestion Bar */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragOver(true);
+          }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={handleDropFile}
+          className={`rounded-[10px] border-2 border-dashed p-4 mb-4 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
+            isDragOver
+              ? 'border-[var(--cw-signal)] bg-[var(--cw-signal-wash)]'
+              : 'border-[var(--cw-rule-2)] bg-[var(--cw-raised)]'
+          }`}
+        >
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-[8px] bg-[var(--cw-corpus-wash)] border border-[var(--cw-corpus-rule)] text-[var(--cw-corpus-ink)] flex items-center justify-center shrink-0">
+              <Upload className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-sm text-[var(--cw-ink)]">
+                  Upload or Drag &amp; Drop Manuscript File (.PDF, .DOCX, .ODT, .RTF, .TEX, .TXT)
+                </span>
+                <span className="cw-mono text-[11px] px-2 py-0.5 rounded bg-[var(--cw-sunken)] border border-[var(--cw-rule)] text-[var(--cw-ink-2)]">
+                  Max 15 MB · Instant Similarity &amp; AI-ish Audit
+                </span>
+              </div>
+              <p className="text-xs text-[var(--cw-ink-3)] mt-0.5">
+                Extracts raw paragraphs from PDF FlateDecode text streams and Word OpenXML (
+                <code className="cw-mono">word/document.xml</code>), then runs Rabin-Karp
+                Winnowing similarity + sentence burstiness AI-ish stylometry simultaneously.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingDoc}
+              className="cw-btn-primary text-xs !py-2 !px-3.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>
+                {uploadingDoc ? 'Extracting Document...' : 'Select .PDF or .DOCX File'}
+              </span>
+            </button>
+            <a
+              href="/api/parse-document?sample=docx&id=sample-1-thesis"
+              download="citeward-sample-1-thesis.docx"
+              className="cw-btn-ghost text-xs !py-2 !px-3"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Sample .DOCX</span>
+            </a>
+          </div>
+        </div>
+
+        {/* Upload Telemetry Banner or Error Alert */}
+        {uploadError && (
+          <div className="rounded-[8px] border border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] px-4 py-3 mb-4 text-xs font-medium flex items-center justify-between gap-3">
+            <span>Document Upload Error: {uploadError}</span>
+            <button
+              type="button"
+              onClick={() => setUploadError(null)}
+              className="cw-mono underline cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {uploadMeta && (
+          <div className="rounded-[8px] border border-[var(--cw-corpus-rule)] bg-[var(--cw-corpus-wash)] px-4 py-2.5 mb-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-[var(--cw-corpus-ink)]">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span className="font-semibold">
+                [{uploadMeta.fileType} Extracted] {uploadMeta.fileName}
+              </span>
+              <span className="cw-mono">
+                · {(uploadMeta.byteSize / 1024).toFixed(1)} KB · ~{uploadMeta.estimatedPages}{' '}
+                page(s) · {uploadMeta.wordCount.toLocaleString()} words
+              </span>
+            </div>
+            <div className="flex items-center gap-3 cw-mono font-semibold">
+              <span className="text-[var(--cw-corpus-ink)]">
+                Similarity: {audit.overallSimilarityPercent}%
+              </span>
+              <span className="text-[var(--cw-stylo-ink)]">
+                AI-ish Stylometry: {audit.stylometry.overallAiPercent}%
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Preset Benchmark Selector Strip */}
         <div className="rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] p-3 mb-4 flex flex-col xl:flex-row xl:items-center justify-between gap-3">

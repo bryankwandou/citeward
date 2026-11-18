@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { Plus, Trash2, Layers } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { Plus, Trash2, Layers, Upload } from 'lucide-react';
 import {
   computeMinHashSignature,
   computeWinnowFingerprints,
@@ -49,6 +49,50 @@ export default function MatrixPage() {
   const [newTitle, setNewTitle] = useState('');
   const [newStudent, setNewStudent] = useState('');
   const [newText, setNewText] = useState('');
+  const [uploadingCohortFile, setUploadingCohortFile] = useState(false);
+  const cohortFileRef = useRef<HTMLInputElement | null>(null);
+
+  const handleCohortFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCohortFile(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/parse-document', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data?.ok && data?.parsed?.text) {
+        setDocs((prev) => [
+          ...prev,
+          {
+            id: `doc-${Date.now()}`,
+            title: data.parsed.extractedTitle || file.name,
+            student: `Uploaded ${String(data.parsed.fileType).toUpperCase()}`,
+            text: data.parsed.text.slice(0, 60000),
+          },
+        ]);
+      }
+    } catch {
+      const raw = await file.text();
+      if (raw.trim()) {
+        setDocs((prev) => [
+          ...prev,
+          {
+            id: `doc-${Date.now()}`,
+            title: file.name,
+            student: 'Uploaded File',
+            text: raw.slice(0, 60000),
+          },
+        ]);
+      }
+    } finally {
+      setUploadingCohortFile(false);
+      e.target.value = '';
+    }
+  };
 
   const analysis = useMemo(() => {
     const processed = docs.map((d) => {
@@ -249,8 +293,32 @@ export default function MatrixPage() {
             onSubmit={handleAddDoc}
             className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 space-y-3"
           >
-            <div className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
-              Add Submission to Cohort Matrix
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
+                Add Submission to Cohort Matrix
+              </div>
+              <div>
+                <input
+                  ref={cohortFileRef}
+                  type="file"
+                  accept=".pdf,.docx,.odt,.rtf,.txt,.md,.tex,.html"
+                  onChange={handleCohortFileUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => cohortFileRef.current?.click()}
+                  disabled={uploadingCohortFile}
+                  className="cw-btn-ghost text-xs !py-1.5 !px-3"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>
+                    {uploadingCohortFile
+                      ? 'Extracting PDF/DOCX...'
+                      : 'Upload .PDF / .DOCX Submission'}
+                  </span>
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <input

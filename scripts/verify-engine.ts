@@ -8,6 +8,11 @@ import {
   humanizeAndParaphraseDeterministically,
   scanDocumentManipulations,
 } from '../src/lib/forensics-and-ecosystem';
+import {
+  createDocxBuffer,
+  parseDocumentBuffer,
+} from '../src/lib/document-parser';
+import { generateAuditPdfBlob } from '../src/lib/pdf-report';
 
 function assert(condition: boolean, message: string) {
   if (!condition) {
@@ -89,6 +94,38 @@ async function main() {
   );
   console.log(
     `[PASS] Homoglyph Trap & Human Paraphraser: 0 AI tells, ${rewrittenAudit.overallSimilarityPercent}% similarity (<5% SLA), Burstiness CV=${rewrittenAudit.stylometry.burstinessScore}`
+  );
+
+  console.log('=== 5. Verifying Binary .DOCX & .PDF Document Upload Extraction ===');
+  const docxBuf = createDocxBuffer(
+    SAMPLE_MANUSCRIPTS[0].title,
+    SAMPLE_MANUSCRIPTS[0].author,
+    SAMPLE_MANUSCRIPTS[0].text
+  );
+  const parsedDocx = parseDocumentBuffer('thesis-draft.docx', docxBuf);
+  assert(
+    parsedDocx.fileType === 'docx' && parsedDocx.wordCount >= 180,
+    `Expected DOCX extraction >= 180 words, got ${parsedDocx.wordCount}`
+  );
+  const docxAudit = runManuscriptAudit(parsedDocx.text);
+  assert(
+    docxAudit.overallSimilarityPercent >= 35,
+    `Expected extracted DOCX similarity >= 35%, got ${docxAudit.overallSimilarityPercent}%`
+  );
+
+  const pdfBlob = generateAuditPdfBlob({
+    title: SAMPLE_MANUSCRIPTS[0].title,
+    author: SAMPLE_MANUSCRIPTS[0].author,
+    audit: auditExcluded,
+  });
+  const pdfArrayBuf = await pdfBlob.arrayBuffer();
+  const parsedPdf = parseDocumentBuffer('audit-receipt.pdf', Buffer.from(pdfArrayBuf));
+  assert(
+    parsedPdf.fileType === 'pdf' && parsedPdf.wordCount >= 40,
+    `Expected PDF extraction >= 40 words, got ${parsedPdf.wordCount}`
+  );
+  console.log(
+    `[PASS] Binary .DOCX (${parsedDocx.wordCount}w, Sim=${docxAudit.overallSimilarityPercent}%) & .PDF (${parsedPdf.wordCount}w) upload extraction verified.`
   );
 }
 

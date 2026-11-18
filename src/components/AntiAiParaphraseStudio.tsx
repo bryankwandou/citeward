@@ -1,7 +1,14 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
-import { Sparkles, CheckCircle2, AlertTriangle, RotateCcw } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import {
+  Sparkles,
+  CheckCircle2,
+  AlertTriangle,
+  RotateCcw,
+  Upload,
+  Download,
+} from 'lucide-react';
 import {
   analyzeAiTells,
   humanizeAndParaphraseDeterministically,
@@ -18,11 +25,69 @@ const PRESET_HOMOGLYPH = `Digit\u0430l d\u043Ecuments \u0430re e\u0430sily c\u04
 export function AntiAiParaphraseStudio() {
   const [inputText, setInputText] = useState<string>(PRESET_SLOP);
   const [rewriting, setRewriting] = useState<boolean>(false);
+  const [uploadingFile, setUploadingFile] = useState<boolean>(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [beforeSnapshot, setBeforeSnapshot] = useState<{
     sim: number;
     ai: number;
     tells: number;
   } | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleUploadForParaphrase = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFile(true);
+    setBeforeSnapshot(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/parse-document', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data?.ok && data?.parsed?.text) {
+        setInputText(data.parsed.text.slice(0, 60000));
+        setUploadedFileName(
+          `${data.parsed.fileName} (${String(data.parsed.fileType).toUpperCase()}, ${data.parsed.wordCount}w)`
+        );
+      }
+    } catch {
+      const raw = await file.text();
+      setInputText(raw.slice(0, 60000));
+      setUploadedFileName(file.name);
+    } finally {
+      setUploadingFile(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleExportParaphrasedDocx = async () => {
+    try {
+      const res = await fetch('/api/parse-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'export-docx',
+          title: 'Citeward Paraphrased Manuscript (<5% Sim & 0 AI Tells)',
+          author: 'Citeward Anti-AI-ish Studio',
+          text: inputText,
+        }),
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'citeward-paraphrased-human.docx';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Ignore error
+    }
+  };
 
   const liveAnalysis = useMemo(() => {
     const manip = scanDocumentManipulations(inputText);
@@ -98,14 +163,38 @@ export function AntiAiParaphraseStudio() {
           {/* Left 7 cols: Live Input & Preset Triggers */}
           <div className="lg:col-span-7 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 shadow-[var(--cw-e2)] space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
-                Passage Under Audit
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
+                  Passage Under Audit
+                </span>
+                {uploadedFileName && (
+                  <span className="cw-mono text-[11px] px-2 py-0.5 rounded bg-[var(--cw-corpus-wash)] border border-[var(--cw-corpus-rule)] text-[var(--cw-corpus-ink)]">
+                    {uploadedFileName}
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx,.odt,.rtf,.txt,.md,.tex,.html"
+                  onChange={handleUploadForParaphrase}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingFile}
+                  className="cw-mono text-[11px] px-2.5 py-1 rounded border border-[var(--cw-signal)] bg-[var(--cw-signal-wash)] text-[var(--cw-signal-ink)] font-semibold hover:bg-[var(--cw-signal)] hover:text-white cursor-pointer inline-flex items-center gap-1"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>{uploadingFile ? 'Extracting...' : 'Upload .PDF / .DOCX'}</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setBeforeSnapshot(null);
+                    setUploadedFileName(null);
                     setInputText(PRESET_SLOP);
                   }}
                   className="cw-mono text-[11px] px-2.5 py-1 rounded border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[var(--cw-ink-2)] hover:border-[var(--cw-signal)] cursor-pointer"
@@ -116,6 +205,7 @@ export function AntiAiParaphraseStudio() {
                   type="button"
                   onClick={() => {
                     setBeforeSnapshot(null);
+                    setUploadedFileName(null);
                     setInputText(PRESET_VERBATIM);
                   }}
                   className="cw-mono text-[11px] px-2.5 py-1 rounded border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[var(--cw-ink-2)] hover:border-[var(--cw-signal)] cursor-pointer"
@@ -126,6 +216,7 @@ export function AntiAiParaphraseStudio() {
                   type="button"
                   onClick={() => {
                     setBeforeSnapshot(null);
+                    setUploadedFileName(null);
                     setInputText(PRESET_HOMOGLYPH);
                   }}
                   className="cw-mono text-[11px] px-2.5 py-1 rounded border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[var(--cw-ink-2)] hover:border-[var(--cw-signal)] cursor-pointer"
@@ -206,8 +297,18 @@ export function AntiAiParaphraseStudio() {
 
               <button
                 type="button"
+                onClick={handleExportParaphrasedDocx}
+                className="cw-btn-ghost text-xs"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Rewritten .DOCX</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   setBeforeSnapshot(null);
+                  setUploadedFileName(null);
                   setInputText(PRESET_SLOP);
                 }}
                 className="cw-btn-ghost text-xs"
