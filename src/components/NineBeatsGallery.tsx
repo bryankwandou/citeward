@@ -10,15 +10,15 @@ interface BeatCard {
   body: string;
   trigger: string;
   visualType:
-    | 'rabin_karp'
-    | 'winnow_min'
-    | 'minhash_lsh'
-    | 'homoglyph'
-    | 'burstiness'
-    | 'mattr'
-    | 'quote_gate'
-    | 'openalex'
-    | 'solana_seal';
+  | 'rabin_karp'
+  | 'winnow_min'
+  | 'minhash_lsh'
+  | 'homoglyph'
+  | 'burstiness'
+  | 'mattr'
+  | 'quote_gate'
+  | 'openalex'
+  | 'solana_seal';
 }
 
 const BEATS: BeatCard[] = [
@@ -152,11 +152,10 @@ export function NineBeatsGallery() {
                       {['0x8A2', '0x4C1', '0x19F', '0x7B0', '0x3E4'].map((h, i) => (
                         <div
                           key={h}
-                          className={`py-1.5 rounded border ${
-                            i === 2
-                              ? 'bg-[#028DB0] text-white border-[#2AD0F0] font-bold scale-105'
-                              : 'bg-[#161C2A] text-[#949AA6] border-[#263044]'
-                          }`}
+                          className={`py-1.5 rounded border ${i === 2
+                            ? 'bg-[#028DB0] text-white border-[#2AD0F0] font-bold scale-105'
+                            : 'bg-[#161C2A] text-[#949AA6] border-[#263044]'
+                            }`}
                         >
                           {h}
                         </div>
@@ -231,7 +230,7 @@ export function NineBeatsGallery() {
 
                   {b.visualType === 'solana_seal' && (
                     <div className="p-2 rounded bg-[#162044] border border-[#2B3F82] cw-mono text-[11px] text-[#8FA8FF] truncate">
-                      tx: 2dHrqKz5qHU9hPeZiPxKPp...SFjn
+                      tx: 26yrD358WWGpB2xfiZ6Xj5...PtnA
                     </div>
                   )}
                 </div>

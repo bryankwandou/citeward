@@ -1,9 +1,10 @@
-import { CorpusSource, OPEN_ACADEMIC_CORPUS, SAMPLE_MANUSCRIPTS } from './corpus';
+import { CorpusSource, OPEN_ACADEMIC_CORPUS } from './corpus';
 
 export interface ExclusionOptions {
   excludeQuotes: boolean;
   excludeBibliography: boolean;
-  minWordMatch: number; // e.g., 8 words (0 = disabled)
+  minWordMatch: number; // e.g., 8 words (0 = disabled -> min 3-word shingle)
+  denominatorMode?: 'total' | 'evaluable'; // 'total' divides by totalWords; 'evaluable' subtracts excluded quote/bib words
 }
 
 export interface WordToken {
@@ -43,8 +44,10 @@ export interface MatchedSourceSummary {
   source: CorpusSource;
   rank: number;
   colorIndex: number;
-  matchedWords: number;
+  matchedWords: number; // Total matched words against this source (All Sources view)
+  primaryMatchedWords: number; // Non-overlapping unique attribution (Turnitin Match Overview view)
   similarityPercent: number;
+  primarySimilarityPercent: number;
   minHashJaccard: number;
   winnowOverlapCount: number;
   spans: MatchSpan[];
@@ -175,15 +178,19 @@ export function findQuotedIntervals(text: string): Array<[number, number]> {
 export function findBibliographyStart(text: string): number {
   if (!text || text.length < 120) return text.length;
 
-  // Only search in the trailing 42% of the manuscript so Table of Contents (Daftar Isi) is never matched
-  const searchFloor = Math.floor(text.length * 0.58);
+  // Scan trailing half of the document and prefer headings that do NOT sit inside a Table of Contents (lines with ".... 12")
+  const searchFloor = Math.floor(text.length * 0.45);
   let lastHeadingOffset = -1;
 
   BIBLIOGRAPHY_HEADINGS_GLOBAL.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = BIBLIOGRAPHY_HEADINGS_GLOBAL.exec(text)) !== null) {
     if (m.index >= searchFloor) {
-      lastHeadingOffset = m.index;
+      const lookahead = text.slice(m.index, m.index + 320);
+      const looksLikeToc = /\.\.\.\.\s*\d+|hal\.\s*\d+/i.test(lookahead);
+      if (!looksLikeToc) {
+        lastHeadingOffset = m.index;
+      }
     }
   }
 
@@ -191,14 +198,16 @@ export function findBibliographyStart(text: string): number {
     return lastHeadingOffset;
   }
 
-  // Fallback for PDFs where DAFTAR PUSTAKA / REFERENCES was merged into a line in the final 35% of the document
   const tailStart = Math.floor(text.length * 0.65);
   const tail = text.slice(tailStart);
   const inlineRegex = /\b(daftar\s+pustaka|references|bibliography|works\s+cited|bibliografi)\b/gi;
   let inlineMatch: RegExpExecArray | null;
   let lastInlineOffset = -1;
   while ((inlineMatch = inlineRegex.exec(tail)) !== null) {
-    lastInlineOffset = tailStart + inlineMatch.index;
+    const lookahead = tail.slice(inlineMatch.index, inlineMatch.index + 240);
+    if (!/\.\.\.\.\s*\d+/.test(lookahead)) {
+      lastInlineOffset = tailStart + inlineMatch.index;
+    }
   }
   return lastInlineOffset !== -1 ? lastInlineOffset : text.length;
 }
@@ -397,10 +406,14 @@ function alignSourceSpans(
     }
   }
 
-  // Helper: check if a sentence boundary (., !, ?, newline, or [N] reference bracket) exists between two tokens
+  // Helper: check if a sentence boundary (., !, ?, newline, or [N] reference bracket) exists between two tokens.
+  // Inside bibliography/reference blocks, only break on newlines or [N] entries so "Title. Proceedings of ..." aligns intact.
   const hasSentenceBoundary = (idxA: number, idxB: number): boolean => {
     const between = docText.slice(docTokens[idxA].end, docTokens[idxB].start);
-    return /[.!?\r\n]|\[\s*\d/.test(between);
+    if (docTokens[idxA].inBibliography && docTokens[idxB].inBibliography) {
+      return /[\r\n]|\[\s*\d+\s*\]/.test(between);
+    }
+    return /[.!?\r\n]|\[\s*\d+\s*\]/.test(between);
   };
 
   // Bridge 1-to-2 word synonym substitutions inside the SAME sentence only (never bridge across periods or [N] brackets!)
@@ -445,9 +458,7 @@ function alignSourceSpans(
       const endWordIdx = idx - 1;
       const wordCount = endWordIdx - startWordIdx + 1;
 
-      const minRequiredWords = isBuiltInBenchmarkOrPreset(docText)
-        ? Math.max(3, exclusions.minWordMatch || 3)
-        : Math.max(4, Math.min(5, exclusions.minWordMatch || 5));
+      const minRequiredWords = exclusions.minWordMatch > 0 ? exclusions.minWordMatch : 3;
 
       if (wordCount >= minRequiredWords) {
         const startChar = docTokens[startWordIdx].start;
@@ -461,8 +472,7 @@ function alignSourceSpans(
 
         const excluded =
           (exclusions.excludeQuotes && inQuote) ||
-          (exclusions.excludeBibliography && inBibliography) ||
-          (exclusions.minWordMatch > 0 && wordCount < minRequiredWords);
+          (exclusions.excludeBibliography && inBibliography);
 
         spans.push({
           sourceId: source.id,
@@ -878,563 +888,10 @@ export function sha256Hex(ascii: string): string {
   return result;
 }
 
-const CITATION_CLAUSE_REGEX =
-  /\b(?:menurut|berdasarkan\s+penelitian|sebagaimana\s+dikemukakan|sejalan\s+dengan\s+penelitian|hasil\s+penelitian\s+yang|menjelaskan\s+bahwa|mengemukakan\s+bahwa|mendefinisikan\s+bahwa|menyatakan\s+bahwa|according\s+to|demonstrated\s+that|proposed\s+by|defined\s+as|in\s+a\s+study\s+by|previous\s+research|consistent\s+with|et\s+al\.|dkk\.)\b|\([A-Z][A-Za-z\s&.,-]{1,35},?\s*(?:19|20)\d{2}[a-z]?\)|\[\d{1,3}\]/i;
-
-const METHODOLOGY_CLAUSE_REGEX =
-  /\b(?:metode\s+penelitian|jenis\s+penelitian|pendekatan\s+penelitian|populasi\s+dan\s+sampel|teknik\s+pengambilan\s+sampel|teknik\s+pengumpulan\s+data|teknik\s+analisis\s+data|uji\s+validitas|uji\s+reliabilitas|uji\s+asumsi\s+klasik|uji\s+normalitas|uji\s+multikolinearitas|uji\s+heteroskedastisitas|regresi\s+linier|uji\s+hipotesis|koefisien\s+determinasi|variabel\s+independen|variabel\s+dependen|rumusan\s+masalah|tujuan\s+penelitian|manfaat\s+penelitian|lokasi\s+penelitian|subjek\s+penelitian|informan\s+penelitian|reduksi\s+data|triangulasi|responden|kuesioner|wawancara|observasi|research\s+design|data\s+collection|sampling\s+technique|statistical\s+analysis|regression\s+model|hypothesis\s+testing|independent\s+variable|dependent\s+variable|significance\s+level|standard\s+deviation|confidence\s+interval|methodology|qualitative\s+approach|quantitative\s+approach)\b/i;
-
-const INTERNET_THEORY_CLAUSE_REGEX =
-  /\b(?:berdasarkan\s+hasil|dapat\s+disimpulkan\s+bahwa|hal\s+ini\s+menunjukkan|dengan\s+demikian|oleh\s+karena\s+itu|faktor-faktor\s+yang|pengaruh\s+[\p{L}\s]{2,25}\s+terhadap|hubungan\s+antara|dalam\s+penelitian\s+ini|berdasarkan\s+tabel|berdasarkan\s+gambar|nilai\s+signifikansi|berpengaruh\s+positif|berpengaruh\s+signifikan|secara\s+simultan|secara\s+parsial|landasan\s+teori|tinjauan\s+pustaka|kerangka\s+pemikiran|definisi\s+operasional|the\s+results\s+of\s+this\s+study|findings\s+indicate\s+that|significant\s+positive|it\s+can\s+be\s+concluded|as\s+illustrated\s+in|theoretical\s+framework|literature\s+review|empirical\s+evidence|in\s+the\s+context\s+of|in\s+accordance\s+with)\b/iu;
-
-function isBuiltInBenchmarkOrPreset(text: string): boolean {
-  const norm = text.slice(0, 260).toLowerCase().replace(/\s+/g, ' ').trim();
-  for (const s of SAMPLE_MANUSCRIPTS.slice(0, 4)) {
-    const sNorm = s.text.slice(0, 180).toLowerCase().replace(/\s+/g, ' ').trim();
-    if (norm.includes(sNorm.slice(0, 90))) return true;
-  }
-  if (
-    norm.includes('mahakam delta') ||
-    norm.includes('automated analytical frameworks plays a pivotal role') ||
-    norm.includes('verification pipeline processes 1,240 student manuscripts')
-  ) {
-    return true;
-  }
-  return false;
-}
-
-/**
- * Turnitin-Calibrated Adaptive Corpus Indexer for arbitrary uploaded manuscripts (.PDF / .DOCX / .TXT).
- * Extracts in-text cited passages, bibliography references, methodological boilerplate, and open-access
- * scholarly clauses across the 3 Turnitin channels: Publications (DOI), Internet Sources, and Student Papers.
- */
-export function buildAdaptiveTurnitinCorpus(
-  text: string,
-  docTokens: WordToken[]
-): CorpusSource[] {
-  if (docTokens.length < 130 || isBuiltInBenchmarkOrPreset(text)) {
-    return [];
-  }
-
-  const bodyTokens = docTokens.filter((t) => !t.inBibliography && !t.inQuote);
-  const bibTokens = docTokens.filter((t) => t.inBibliography);
-  if (bodyTokens.length < 60) {
-    return [];
-  }
-
-  const isIndonesian =
-    /\b(yang|dan|dalam|untuk|dengan|pada|dari|penelitian|ini|adalah|bahwa|terhadap|oleh|mahasiswa|universitas|sistem|informasi|prosedur|pedoman)\b/i.test(
-      text
-    );
-
-  // 1. Extract real bracketed references [1] ..., [2] ..., DOIs, academic domains (*.ac.id, *.edu), and parenthetical citations directly from the document!
-  const extractedPubSources: Array<{
-    title: string;
-    authors: string;
-    publication: string;
-    year: number;
-    url: string;
-    doi?: string;
-    repository: string;
-  }> = [];
-
-  const extractedNetSources: Array<{
-    title: string;
-    authors: string;
-    publication: string;
-    year: number;
-    url: string;
-    repository: string;
-  }> = [];
-
-  const extractedStuSources: Array<{
-    title: string;
-    authors: string;
-    publication: string;
-    year: number;
-    url: string;
-    repository: string;
-  }> = [];
-
-  // Parse numbered reference items like: [1] P. Siada & A. L. Tungadi, TEMATIKA ... 2021, doi:10.56963/...
-  const bracketRefRegex = /\[(\d{1,2})\]\s*([^\[\r\n]{18,220})/g;
-  let brMatch: RegExpExecArray | null;
-  while ((brMatch = bracketRefRegex.exec(text)) !== null && extractedPubSources.length < 8) {
-    const rawRef = brMatch[2].replace(/\s+/g, ' ').trim();
-    const doiMatch = rawRef.match(/doi\s*:\s*(10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+)/i);
-    const domainMatch = rawRef.match(/\b([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.id|edu|go\.id|org|com))\b/i);
-    const yearMatch = rawRef.match(/\b((?:19|20)\d{2})\b/);
-    const year = yearMatch ? Number(yearMatch[1]) : 2024;
-
-    if (domainMatch) {
-      const dom = domainMatch[1].toLowerCase();
-      extractedNetSources.push({
-        title: `${dom} — ${rawRef.slice(0, 95)}`,
-        authors: dom,
-        publication: `Academic Web Repository (${dom})`,
-        year,
-        url: `https://${dom}`,
-        repository: `Internet Source (${dom})`,
-      });
-    } else {
-      extractedPubSources.push({
-        title: rawRef.slice(0, 110),
-        authors: rawRef.split(',')[0]?.slice(0, 50) || 'Indexed Publication Author',
-        publication: doiMatch ? `DOI ${doiMatch[1]}` : 'Crossref / SINTA Journal Index',
-        year,
-        url: doiMatch ? `https://doi.org/${doiMatch[1]}` : 'https://scholar.google.com/',
-        doi: doiMatch ? doiMatch[1] : undefined,
-        repository: doiMatch ? `Publication (${doiMatch[1]})` : 'Publication (Crossref / SINTA)',
-      });
-    }
-  }
-
-  // Parse standalone academic domains in text (e.g. fib.ub.ac.id, its.ac.id, ugm.ac.id, ui.ac.id)
-  const domainGlobalRegex =
-    /\b([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:ac\.id|edu|go\.id|or\.id))\b/gi;
-  let domMatch: RegExpExecArray | null;
-  const seenDomains = new Set<string>(extractedNetSources.map((s) => s.authors));
-  while ((domMatch = domainGlobalRegex.exec(text)) !== null && extractedNetSources.length < 6) {
-    const dom = domMatch[1].toLowerCase();
-    if (!seenDomains.has(dom)) {
-      seenDomains.add(dom);
-      extractedNetSources.push({
-        title: `${dom} — Institutional Academic & Digital Repository`,
-        authors: dom,
-        publication: dom,
-        year: 2024,
-        url: `https://${dom}`,
-        repository: `Internet Source (${dom})`,
-      });
-    }
-  }
-
-  // Parse university names mentioned in text for Student Paper Repositories
-  const uniRegex =
-    /\b(Universitas\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?|Institut\s+Teknologi\s+[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)?|FEB\s+UGM|FILKOM\s+UB|FIB\s+Universitas\s+Brawijaya|UAJM)\b/g;
-  let uniMatch: RegExpExecArray | null;
-  const seenUnis = new Set<string>();
-  while ((uniMatch = uniRegex.exec(text)) !== null && extractedStuSources.length < 4) {
-    const uni = uniMatch[1].trim();
-    if (!seenUnis.has(uni)) {
-      seenUnis.add(uni);
-      extractedStuSources.push({
-        title: `Submitted to ${uni} (Student Paper & ETD Repository)`,
-        authors: `${uni} Student Paper Archive`,
-        publication: `Higher Education Repository — ${uni}`,
-        year: 2024,
-        url: 'https://rama.kemdikbud.go.id/',
-        repository: `Student Papers (${uni})`,
-      });
-    }
-  }
-
-  // Extract parenthetical cited authors like (Sugiyono, 2019) or Menurut Rahmawati (2022)
-  const citedAuthors: string[] = [];
-  const citeAuthorRegex =
-    /\(([A-Z][A-Za-z\s&.-]{2,25}),?\s*((?:19|20)\d{2})\)|(?:Menurut|According to)\s+([A-Z][A-Za-z\s&.-]{2,22})\s*\(((?:19|20)\d{2})\)/g;
-  let caMatch: RegExpExecArray | null;
-  while ((caMatch = citeAuthorRegex.exec(text)) !== null && citedAuthors.length < 6) {
-    const name = (caMatch[1] || caMatch[3] || '').trim();
-    const yr = (caMatch[2] || caMatch[4] || '').trim();
-    const label = `${name} (${yr})`;
-    if (name && yr && !citedAuthors.includes(label)) {
-      citedAuthors.push(label);
-    }
-  }
-
-  const citationBuckets: string[][] = [[], [], [], []];
-  const methodologyBuckets: string[][] = [[], [], []];
-  const internetBuckets: string[][] = [[], [], [], []];
-
-  // 1. Index every bracketed reference item [1] ..., [2] ..., [3] ... cleanly as its own complete clause (never crossing [N] boundaries!)
-  const refItemRegex = /\[(\d{1,2})\]\s*([^\[\r\n]{15,260})/g;
-  let riMatch: RegExpExecArray | null;
-  let refIdx = 0;
-  while ((riMatch = refItemRegex.exec(text)) !== null) {
-    const cleanRefClause = riMatch[2]
-      .replace(/\s+/g, ' ')
-      .replace(/[.]+$/, '')
-      .trim();
-    if (/\b(?:ac\.id|edu|go\.id|org|com)\b/i.test(cleanRefClause)) {
-      internetBuckets[refIdx % internetBuckets.length].push(cleanRefClause);
-    } else if (/\b(?:UGM|UB|Universitas|ITS|Institut|Fakultas|HIMA|Ormawa)\b/i.test(cleanRefClause)) {
-      methodologyBuckets[refIdx % methodologyBuckets.length].push(cleanRefClause);
-    } else {
-      citationBuckets[refIdx % citationBuckets.length].push(cleanRefClause);
-    }
-    refIdx++;
-  }
-
-  // 2. Segment body text into natural grammatical sentences so highlights NEVER cross periods (.) or [N] markers!
-  const bibStart = findBibliographyStart(text);
-  const bodySlice = text.slice(0, bibStart);
-  const rawSentences = bodySlice
-    .split(/(?<=[.!?])\s+|\r?\n+|(?=\[\d{1,3}\])/g)
-    .map((s) => s.replace(/^\[\d{1,3}\]\s*/, '').replace(/\s+/g, ' ').trim())
-    .filter((s) => {
-      const wc = (s.match(/[\p{L}\p{N}]+/gu) || []).length;
-      return wc >= 7;
-    });
-
-  const seenPhrases = new Set<string>();
-  let sentCounter = 0;
-
-  for (const sent of rawSentences) {
-    // Skip if already indexed as a bracketed reference
-    if (/^(?:P\.\s*Siada|Pedoman\s+LPJ|Prosedur\s+Proposal|SOP\s+HIMA|SOP\s+LPJ|Surat\s+Edaran)/i.test(sent)) {
-      continue;
-    }
-    // Extract a clean single-sentence clause (never crossing a period!)
-    const clausesInSent = sent
-      .split(/[;:]\s+/)
-      .map((c) => c.trim())
-      .filter((c) => (c.match(/[\p{L}\p{N}]+/gu) || []).length >= 7);
-
-    const targetSent = clausesInSent[0] || sent;
-    const words = targetSent.split(/\s+/);
-    const cleanClause =
-      words.length <= 16 ? targetSent : words.slice(0, 14).join(' ');
-    const normKey = cleanClause.toLowerCase();
-    if (seenPhrases.has(normKey)) continue;
-
-    if (CITATION_CLAUSE_REGEX.test(sent)) {
-      seenPhrases.add(normKey);
-      citationBuckets[sentCounter % citationBuckets.length].push(cleanClause);
-      sentCounter++;
-    } else if (METHODOLOGY_CLAUSE_REGEX.test(sent)) {
-      seenPhrases.add(normKey);
-      methodologyBuckets[sentCounter % methodologyBuckets.length].push(cleanClause);
-      sentCounter++;
-    } else if (INTERNET_THEORY_CLAUSE_REGEX.test(sent)) {
-      seenPhrases.add(normKey);
-      internetBuckets[sentCounter % internetBuckets.length].push(cleanClause);
-      sentCounter++;
-    } else if (sentCounter % 2 === 0 && words.length >= 9) {
-      seenPhrases.add(normKey);
-      const ch = sentCounter % 3;
-      if (ch === 0) citationBuckets[sentCounter % citationBuckets.length].push(cleanClause);
-      else if (ch === 1) internetBuckets[sentCounter % internetBuckets.length].push(cleanClause);
-      else methodologyBuckets[sentCounter % methodologyBuckets.length].push(cleanClause);
-      sentCounter++;
-    } else {
-      sentCounter++;
-    }
-  }
-
-  // Also index Bibliography / Daftar Pustaka lines cleanly per reference entry
-  if (bibStart < text.length) {
-    const bibLines = text
-      .slice(bibStart)
-      .split(/\r?\n+/)
-      .map((l) => l.replace(/\s+/g, ' ').trim())
-      .filter((l) => (l.match(/[\p{L}\p{N}]+/gu) || []).length >= 7)
-      .slice(0, 30);
-    bibLines.forEach((bLine, idx) => {
-      citationBuckets[idx % citationBuckets.length].push(bLine);
-    });
-  }
-
-  const adaptiveSources: CorpusSource[] = [];
-
-  const pubTemplates = isIndonesian
-    ? [
-        {
-          id: 'turnitin-pub-1',
-          title:
-            citedAuthors[0]
-              ? `Kajian Literatur & Landasan Empiris — ${citedAuthors[0]}`
-              : 'Jurnal Ilmiah Nasional Terakreditasi (SINTA / Garuda DOI Index)',
-          authors: citedAuthors[0] || 'Tim Peneliti Jurnal Ilmiah Terakreditasi',
-          publication: 'Garuda Kemdikbud & Crossref DOI Registry',
-          year: 2023,
-          url: 'https://garuda.kemdikbud.go.id/',
-          doi: '10.14710/jurnal.sinta.2023.01',
-          repository: 'Crossref / SINTA Publications',
-        },
-        {
-          id: 'turnitin-pub-2',
-          title:
-            citedAuthors[1]
-              ? `Sintesis Teoretis dan Metodologi Penelitian — ${citedAuthors[1]}`
-              : 'Prosiding & Publikasi Ilmiah Perguruan Tinggi (OpenAlex / Crossref)',
-          authors: citedAuthors[1] || 'Konsorsium Publikasi Ilmiah Nasional',
-          publication: 'OpenAlex & Crossref Scholarly Index',
-          year: 2022,
-          url: 'https://openalex.org/',
-          doi: '10.31219/osf.io/citeward-pub2',
-          repository: 'OpenAlex Scholarly Works',
-        },
-        {
-          id: 'turnitin-pub-3',
-          title:
-            citedAuthors[2]
-              ? `Analisis Variabel dan Pengujian Hipotesis — ${citedAuthors[2]}`
-              : 'Indonesian Journal of Applied Research & Empirical Studies',
-          authors: citedAuthors[2] || 'Dewan Redaksi Jurnal Ilmiah',
-          publication: 'Directory of Open Access Journals (DOAJ)',
-          year: 2024,
-          url: 'https://doaj.org/',
-          doi: '10.20885/ijares.vol14.iss2',
-          repository: 'DOAJ / Crossref DOI',
-        },
-        {
-          id: 'turnitin-pub-4',
-          title: 'Indeks Sitasi & Daftar Pustaka Terverifikasi (Crossref / Google Scholar)',
-          authors: citedAuthors[3] || 'Indeks Bibliografi Akademik',
-          publication: 'Crossref Global Citation Registry',
-          year: 2023,
-          url: 'https://www.crossref.org/',
-          doi: '10.1000/crossref.bib.index',
-          repository: 'Crossref Bibliography Index',
-        },
-      ]
-    : [
-        {
-          id: 'turnitin-pub-1',
-          title:
-            citedAuthors[0]
-              ? `Peer-Reviewed Literature & Empirical Framework — ${citedAuthors[0]}`
-              : 'Crossref & OpenAlex Indexed Journal Publication',
-          authors: citedAuthors[0] || 'Indexed Journal Authors',
-          publication: 'Crossref Global DOI Registry',
-          year: 2023,
-          url: 'https://www.crossref.org/',
-          doi: '10.1016/j.academic.2023.104',
-          repository: 'Crossref DOI Registry',
-        },
-        {
-          id: 'turnitin-pub-2',
-          title:
-            citedAuthors[1]
-              ? `Comparative Methodology & Quantitative Synthesis — ${citedAuthors[1]}`
-              : 'OpenAlex Indexed Proceedings & Monograph Series',
-          authors: citedAuthors[1] || 'OpenAlex Research Consortium',
-          publication: 'OpenAlex Scholarly Index',
-          year: 2022,
-          url: 'https://openalex.org/',
-          doi: '10.1109/ACCESS.2022.319',
-          repository: 'OpenAlex Scholarly Works',
-        },
-        {
-          id: 'turnitin-pub-3',
-          title:
-            citedAuthors[2]
-              ? `Theoretical Foundations & Domain Analysis — ${citedAuthors[2]}`
-              : 'International Journal of Empirical & Applied Sciences',
-          authors: citedAuthors[2] || 'Editorial Research Board',
-          publication: 'Springer / Elsevier / MDPI Crossref Feed',
-          year: 2024,
-          url: 'https://doaj.org/',
-          doi: '10.3390/app14020812',
-          repository: 'Crossref Publications',
-        },
-        {
-          id: 'turnitin-pub-4',
-          title: 'Indexed Bibliographic & Reference Registry (Crossref / Semantic Scholar)',
-          authors: citedAuthors[3] || 'Scholarly Citation Registry',
-          publication: 'Semantic Scholar & Crossref',
-          year: 2023,
-          url: 'https://www.semanticscholar.org/',
-          doi: '10.1145/citation.registry',
-          repository: 'Crossref Reference Index',
-        },
-      ];
-
-  citationBuckets.forEach((bucket, i) => {
-    const customPub = extractedPubSources[i];
-    const tpl = customPub
-      ? {
-          id: `turnitin-pub-${i + 1}`,
-          ...customPub,
-        }
-      : pubTemplates[i];
-    if (bucket.length > 0 && tpl) {
-      adaptiveSources.push({
-        ...tpl,
-        category: 'publications',
-        text: bucket.join(' . '),
-      });
-    }
-  });
-
-  const internetTemplates = isIndonesian
-    ? [
-        {
-          id: 'turnitin-net-1',
-          title: 'media.neliti.com — Repositori Publikasi & Artikel Ilmiah Indonesia',
-          authors: 'Neliti Open Academic Archive',
-          publication: 'media.neliti.com',
-          year: 2023,
-          url: 'https://www.neliti.com/',
-          repository: 'Internet Source (media.neliti.com)',
-        },
-        {
-          id: 'turnitin-net-2',
-          title: 'core.ac.uk — Open Access Research Papers & Institutional Preprints',
-          authors: 'CORE Global Open Access Aggregator',
-          publication: 'core.ac.uk',
-          year: 2024,
-          url: 'https://core.ac.uk/',
-          repository: 'Internet Source (core.ac.uk)',
-        },
-        {
-          id: 'turnitin-net-3',
-          title: 'researchgate.net — Academic Preprint & Full-Text Research Network',
-          authors: 'ResearchGate Open Archive',
-          publication: 'researchgate.net',
-          year: 2023,
-          url: 'https://www.researchgate.net/',
-          repository: 'Internet Source (researchgate.net)',
-        },
-        {
-          id: 'turnitin-net-4',
-          title: 'pdfs.semanticscholar.org — Open Scholarly Corpus & Web Index',
-          authors: 'Allen Institute for AI (Semantic Scholar)',
-          publication: 'semanticscholar.org',
-          year: 2024,
-          url: 'https://www.semanticscholar.org/',
-          repository: 'Internet Source (semanticscholar.org)',
-        },
-      ]
-    : [
-        {
-          id: 'turnitin-net-1',
-          title: 'core.ac.uk — Aggregated Open Access Research Papers',
-          authors: 'CORE Open Access Index',
-          publication: 'core.ac.uk',
-          year: 2024,
-          url: 'https://core.ac.uk/',
-          repository: 'Internet Source (core.ac.uk)',
-        },
-        {
-          id: 'turnitin-net-2',
-          title: 'pdfs.semanticscholar.org — S2ORC Open Research Corpus',
-          authors: 'Semantic Scholar Open Corpus',
-          publication: 'semanticscholar.org',
-          year: 2023,
-          url: 'https://www.semanticscholar.org/',
-          repository: 'Internet Source (semanticscholar.org)',
-        },
-        {
-          id: 'turnitin-net-3',
-          title: 'researchgate.net — Preprint & Methodological Working Papers',
-          authors: 'ResearchGate Contributors',
-          publication: 'researchgate.net',
-          year: 2024,
-          url: 'https://www.researchgate.net/',
-          repository: 'Internet Source (researchgate.net)',
-        },
-        {
-          id: 'turnitin-net-4',
-          title: 'arxiv.org / osf.io — Open Science Preprint Server',
-          authors: 'Open Science Framework',
-          publication: 'osf.io',
-          year: 2023,
-          url: 'https://osf.io/',
-          repository: 'Internet Source (osf.io)',
-        },
-      ];
-
-  internetBuckets.forEach((bucket, i) => {
-    const customNet = extractedNetSources[i];
-    const tpl = customNet
-      ? {
-          id: `turnitin-net-${i + 1}`,
-          ...customNet,
-        }
-      : internetTemplates[i];
-    if (bucket.length > 0 && tpl) {
-      adaptiveSources.push({
-        ...tpl,
-        category: 'internet',
-        text: bucket.join(' . '),
-      });
-    }
-  });
-
-  const studentTemplates = isIndonesian
-    ? [
-        {
-          id: 'turnitin-stu-1',
-          title: 'Submitted to Higher Education Consortium (Repositori Skripsi & Tesis Nasional)',
-          authors: 'Student Paper Submission Archive',
-          publication: 'Konsorsium Repositori Perguruan Tinggi Indonesia',
-          year: 2024,
-          url: 'https://rama.kemdikbud.go.id/',
-          repository: 'Student Papers (RAMA Kemdikbud / ETD)',
-        },
-        {
-          id: 'turnitin-stu-2',
-          title: 'Submitted to Universitas Indonesia / Universitas Gadjah Mada (ETD Repository)',
-          authors: 'Electronic Theses & Dissertations Archive',
-          publication: 'etd.ugm.ac.id / lib.ui.ac.id',
-          year: 2023,
-          url: 'https://etd.ugm.ac.id/',
-          repository: 'Student Papers (University ETD Archive)',
-        },
-        {
-          id: 'turnitin-stu-3',
-          title: 'Submitted to Institutional Eprints Repository (eprints.undip.ac.id / repository.unair.ac.id)',
-          authors: 'Undergraduate & Graduate Thesis Archive',
-          publication: 'Institutional Eprints Repository',
-          year: 2023,
-          url: 'https://eprints.undip.ac.id/',
-          repository: 'Student Papers (Institutional Eprints)',
-        },
-      ]
-    : [
-        {
-          id: 'turnitin-stu-1',
-          title: 'Submitted to Higher Education Institutional Student Paper Repository',
-          authors: 'Global ETD Student Paper Archive',
-          publication: 'Networked Digital Library of Theses and Dissertations (NDLTD)',
-          year: 2024,
-          url: 'http://www.ndltd.org/',
-          repository: 'Student Papers (NDLTD Global ETD)',
-        },
-        {
-          id: 'turnitin-stu-2',
-          title: 'Submitted to University Graduate Thesis & Dissertation Archive',
-          authors: 'Graduate Thesis Repository',
-          publication: 'Open Access Theses and Dissertations (OATD)',
-          year: 2023,
-          url: 'https://oatd.org/',
-          repository: 'Student Papers (OATD Repository)',
-        },
-        {
-          id: 'turnitin-stu-3',
-          title: 'Submitted to Academic Coursework & Research Methods Consortium',
-          authors: 'Institutional Coursework Archive',
-          publication: 'Higher Education Submission Index',
-          year: 2023,
-          url: 'https://oatd.org/',
-          repository: 'Student Papers (Coursework Index)',
-        },
-      ];
-
-  methodologyBuckets.forEach((bucket, i) => {
-    const customStu = extractedStuSources[i];
-    const tpl = customStu
-      ? {
-          id: `turnitin-stu-${i + 1}`,
-          ...customStu,
-        }
-      : studentTemplates[i];
-    if (bucket.length > 0 && tpl) {
-      adaptiveSources.push({
-        ...tpl,
-        category: 'student_papers',
-        text: bucket.join(' . '),
-      });
-    }
-  });
-
-  return adaptiveSources;
-}
-
 /**
  * Full Turnitin-calibrated Manuscript Similarity & Stylometry Audit Pipeline.
+ * Computes strict set-union token overlap and non-overlapping Primary Match Overview
+ * attribution over the real academic & live retrieved corpus (zero fabricated self-matches).
  */
 export function runManuscriptAudit(
   text: string,
@@ -1442,21 +899,42 @@ export function runManuscriptAudit(
     excludeQuotes: false,
     excludeBibliography: true,
     minWordMatch: 8,
+    denominatorMode: 'total',
   },
-  extraSources: CorpusSource[] = []
+  extraSources: CorpusSource[] = [],
+  excludedSourceIds: string[] = []
 ): IntegrityAuditResult {
   const cleanText = text || '';
   const docTokens = tokenizeManuscript(cleanText);
   const fingerprints = computeWinnowFingerprints(cleanText);
-  const adaptiveCorpus = buildAdaptiveTurnitinCorpus(cleanText, docTokens);
-  const combinedCorpus = [...OPEN_ACADEMIC_CORPUS, ...adaptiveCorpus, ...extraSources];
+  const excludedIdSet = new Set(excludedSourceIds);
+
+  // Deduplicate combined corpus by id while preserving custom/live sources
+  const corpusMap = new Map<string, CorpusSource>();
+  for (const src of [...OPEN_ACADEMIC_CORPUS, ...extraSources]) {
+    if (!excludedIdSet.has(src.id) && !corpusMap.has(src.id)) {
+      corpusMap.set(src.id, src);
+    }
+  }
+  const combinedCorpus = Array.from(corpusMap.values());
 
   const totalWords = docTokens.length;
   const quotedWords = docTokens.filter((t) => t.inQuote).length;
   const bibliographyWords = docTokens.filter((t) => t.inBibliography).length;
-  const evaluableWords = Math.max(1, totalWords);
 
-  // Align against every source in corpus
+  let evaluableWords = totalWords;
+  if (exclusions.denominatorMode === 'evaluable') {
+    const excludedCount = docTokens.filter(
+      (t) =>
+        (exclusions.excludeQuotes && t.inQuote) ||
+        (exclusions.excludeBibliography && t.inBibliography)
+    ).length;
+    evaluableWords = Math.max(1, totalWords - excludedCount);
+  } else {
+    evaluableWords = Math.max(1, totalWords);
+  }
+
+  // Align against every genuine source in corpus
   const rawMatches: Array<{
     source: CorpusSource;
     spans: MatchSpan[];
@@ -1473,31 +951,41 @@ export function runManuscriptAudit(
       exclusions
     );
     if (spans.length > 0) {
-      const activeSpans = spans.filter((s) => !s.excluded);
-      const activeWordCount = activeSpans.reduce((acc, s) => acc + s.wordCount, 0);
-      rawMatches.push({
-        source,
-        spans,
-        activeWordCount,
-        winnowOverlap,
-        jaccard,
-      });
+      const activeSpansForSource = spans.filter((s) => !s.excluded);
+      const activeWordCount = activeSpansForSource.reduce(
+        (acc, s) => acc + s.wordCount,
+        0
+      );
+      if (activeWordCount > 0 || spans.some((s) => !exclusions.excludeQuotes || !s.inQuote)) {
+        rawMatches.push({
+          source,
+          spans,
+          activeWordCount,
+          winnowOverlap,
+          jaccard,
+        });
+      }
     }
   }
 
   // Sort matched sources by active matched word count descending (Turnitin Match Overview order)
   rawMatches.sort((a, b) => {
-    if (b.activeWordCount !== a.activeWordCount) return b.activeWordCount - a.activeWordCount;
+    if (b.activeWordCount !== a.activeWordCount) {
+      return b.activeWordCount - a.activeWordCount;
+    }
+    if (b.spans.length !== a.spans.length) {
+      return b.spans.length - a.spans.length;
+    }
     return b.winnowOverlap - a.winnowOverlap;
   });
 
-  // Assign 1-based rank and colorIndex (1..6)
+  // Assign 1-based rank, colorIndex (1..6), and non-overlapping Primary Source Attribution (like Turnitin Match Overview)
   const sources: MatchedSourceSummary[] = [];
   const allSpans: MatchSpan[] = [];
   const activeSpans: MatchSpan[] = [];
 
-  // Track union of matched word indices per category & overall
   const matchedWordSet = new Set<number>();
+  const primaryAttributedWordSet = new Set<number>();
   const rawMatchedWordSet = new Set<number>();
   const internetWordSet = new Set<number>();
   const pubWordSet = new Set<number>();
@@ -1512,6 +1000,9 @@ export function runManuscriptAudit(
       colorIndex,
     }));
 
+    const sourceUniqueActiveWords = new Set<number>();
+    const sourcePrimaryWords = new Set<number>();
+
     for (const sp of rankedSpans) {
       allSpans.push(sp);
       for (let w = sp.startWordIdx; w <= sp.endWordIdx; w++) {
@@ -1524,7 +1015,12 @@ export function runManuscriptAudit(
           if (!tok) continue;
           if (exclusions.excludeQuotes && tok.inQuote) continue;
           if (exclusions.excludeBibliography && tok.inBibliography) continue;
+          sourceUniqueActiveWords.add(w);
           matchedWordSet.add(w);
+          if (!primaryAttributedWordSet.has(w)) {
+            primaryAttributedWordSet.add(w);
+            sourcePrimaryWords.add(w);
+          }
           if (item.source.category === 'internet') internetWordSet.add(w);
           else if (item.source.category === 'publications') pubWordSet.add(w);
           else if (item.source.category === 'student_papers') studentWordSet.add(w);
@@ -1532,20 +1028,34 @@ export function runManuscriptAudit(
       }
     }
 
-    const simPct = Number(((item.activeWordCount / evaluableWords) * 100).toFixed(1));
-    sources.push({
-      source: item.source,
-      rank,
-      colorIndex,
-      matchedWords: item.activeWordCount,
-      similarityPercent: simPct,
-      minHashJaccard: Number((item.jaccard * 100).toFixed(1)),
-      winnowOverlapCount: item.winnowOverlap,
-      spans: rankedSpans,
-    });
+    const activeUniqueCount = sourceUniqueActiveWords.size;
+    const primaryCount = sourcePrimaryWords.size;
+    const simPct =
+      totalWords === 0
+        ? 0
+        : Number(((activeUniqueCount / evaluableWords) * 100).toFixed(1));
+    const primarySimPct =
+      totalWords === 0
+        ? 0
+        : Number(((primaryCount / evaluableWords) * 100).toFixed(1));
+
+    if (activeUniqueCount > 0 || rankedSpans.length > 0) {
+      sources.push({
+        source: item.source,
+        rank,
+        colorIndex,
+        matchedWords: activeUniqueCount,
+        primaryMatchedWords: primaryCount,
+        similarityPercent: simPct,
+        primarySimilarityPercent: primarySimPct,
+        minHashJaccard: Number((item.jaccard * 100).toFixed(1)),
+        winnowOverlapCount: item.winnowOverlap,
+        spans: rankedSpans,
+      });
+    }
   });
 
-  // Sort activeSpans by startChar for rendering in Document Viewer
+  // Sort activeSpans by startChar for rendering cleanly in Document Viewer
   activeSpans.sort((a, b) => a.startChar - b.startChar || b.wordCount - a.wordCount);
   allSpans.sort((a, b) => a.startChar - b.startChar || b.wordCount - a.wordCount);
 
@@ -1553,14 +1063,18 @@ export function runManuscriptAudit(
   const overallSimilarityPercent =
     totalWords === 0 ? 0 : Number(((matchedWords / evaluableWords) * 100).toFixed(1));
   const rawSimilarityPercent =
-    totalWords === 0 ? 0 : Number(((rawMatchedWordSet.size / Math.max(1, totalWords)) * 100).toFixed(1));
+    totalWords === 0
+      ? 0
+      : Number(((rawMatchedWordSet.size / Math.max(1, totalWords)) * 100).toFixed(1));
 
   const internetPercent =
     totalWords === 0 ? 0 : Number(((internetWordSet.size / evaluableWords) * 100).toFixed(1));
   const publicationsPercent =
     totalWords === 0 ? 0 : Number(((pubWordSet.size / evaluableWords) * 100).toFixed(1));
   const studentPapersPercent =
-    totalWords === 0 ? 0 : Number(((studentWordSet.size / evaluableWords) * 100).toFixed(1));
+    totalWords === 0
+      ? 0
+      : Number(((studentWordSet.size / evaluableWords) * 100).toFixed(1));
 
   const stylometry = evaluateStylometry(cleanText);
   const documentHashSha256 = sha256Hex(cleanText.trim().replace(/\s+/g, ' '));

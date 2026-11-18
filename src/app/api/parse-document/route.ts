@@ -104,6 +104,14 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const mode = req.nextUrl.searchParams.get('mode');
+      if (mode === 'reference') {
+        return NextResponse.json({
+          ok: true,
+          parsed,
+        });
+      }
+
       const liveSources = await fetchLiveCandidateSources(parsed.text);
       const audit = runManuscriptAudit(
         parsed.text,

@@ -126,13 +126,16 @@ export function FeedbackStudio() {
     excludeQuotes: true,
     excludeBibliography: true,
     minWordMatch: 8,
+    denominatorMode: 'total',
   });
 
   const [includeLiveWeb, setIncludeLiveWeb] = useState<boolean>(true);
+  const [sourceViewMode, setSourceViewMode] = useState<'primary' | 'all'>('primary');
   const [customSources, setCustomSources] = useState<CorpusSource[]>([]);
   const [customTitle, setCustomTitle] = useState<string>('');
   const [customText, setCustomText] = useState<string>('');
   const [showCustomForm, setShowCustomForm] = useState<boolean>(false);
+  const [uploadingRefDoc, setUploadingRefDoc] = useState<boolean>(false);
 
   const [liveWebSourcesCount, setLiveWebSourcesCount] = useState<number>(0);
   const [extraFetchedSources, setExtraFetchedSources] = useState<CorpusSource[]>([]);
@@ -194,38 +197,17 @@ export function FeedbackStudio() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const refFileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Compute deterministic audit synchronously in real-time whenever text or exclusions change
-  const rawAudit: IntegrityAuditResult = useMemo(() => {
-    return runManuscriptAudit(text, exclusions, [
-      ...customSources,
-      ...extraFetchedSources,
-    ]);
-  }, [text, exclusions, customSources, extraFetchedSources]);
-
-  // Apply Turnitin per-source exclusions (Exclude Individual Sources)
+  // Compute deterministic set-union audit synchronously (honoring per-source exclusions)
   const audit: IntegrityAuditResult = useMemo(() => {
-    if (excludedSourceIds.length === 0) return rawAudit;
-    const excludedSet = new Set(excludedSourceIds);
-    const filteredSources = rawAudit.sources.filter(
-      (s) => !excludedSet.has(s.source.id)
+    return runManuscriptAudit(
+      text,
+      exclusions,
+      [...customSources, ...extraFetchedSources],
+      excludedSourceIds
     );
-    const filteredActiveSpans = rawAudit.activeSpans.filter(
-      (sp) => !excludedSet.has(sp.sourceId)
-    );
-    const matchedWords = filteredSources.reduce((acc, s) => acc + s.matchedWords, 0);
-    const evalWords = Math.max(1, rawAudit.evaluableWords);
-    const overallSimilarityPercent = Number(
-      Math.min(100, (matchedWords / evalWords) * 100).toFixed(1)
-    );
-    return {
-      ...rawAudit,
-      matchedWords,
-      overallSimilarityPercent,
-      sources: filteredSources,
-      activeSpans: filteredActiveSpans,
-    };
-  }, [rawAudit, excludedSourceIds]);
+  }, [text, exclusions, customSources, extraFetchedSources, excludedSourceIds]);
 
   // Turnitin 2-Category AI Writing Breakdown (Category 1: AI-Generated Only vs Category 2: AI-Paraphrased)
   const aiBreakdown = useMemo(() => {
@@ -273,9 +255,17 @@ export function FeedbackStudio() {
     [selectedSampleId]
   );
 
-  // Compute calibration delta against Turnitin reference benchmark
+  // Compute calibration delta against Turnitin reference benchmark (without clamping)
   const benchmarkCalibration = useMemo(() => {
     if (!currentSample) return null;
+    if (
+      excludedSourceIds.length > 0 ||
+      exclusions.minWordMatch !== 8 ||
+      (exclusions.denominatorMode ?? 'total') !== 'total' ||
+      exclusions.excludeQuotes !== exclusions.excludeBibliography
+    ) {
+      return null;
+    }
     const expected =
       exclusions.excludeQuotes && exclusions.excludeBibliography
         ? currentSample.expectedExcludedSimilarity
@@ -284,9 +274,17 @@ export function FeedbackStudio() {
     return {
       expected: expected.toFixed(1),
       actual: audit.overallSimilarityPercent.toFixed(1),
-      delta: Math.min(0.28, delta).toFixed(2),
+      delta: delta.toFixed(1),
     };
-  }, [currentSample, exclusions.excludeQuotes, exclusions.excludeBibliography, audit.overallSimilarityPercent]);
+  }, [
+    currentSample,
+    excludedSourceIds.length,
+    exclusions.excludeQuotes,
+    exclusions.excludeBibliography,
+    exclusions.minWordMatch,
+    exclusions.denominatorMode,
+    audit.overallSimilarityPercent,
+  ]);
 
   useEffect(() => {
     fetch('/api/solana')
@@ -312,6 +310,7 @@ export function FeedbackStudio() {
           body: JSON.stringify({
             text,
             exclusions,
+            excludedSourceIds,
             customSources,
             includeLiveWeb,
             runDeepVoiceAudit: withVoiceCritique,
@@ -331,6 +330,7 @@ export function FeedbackStudio() {
                 (src: CorpusSource) =>
                   src.id.startsWith('openalex-') ||
                   src.id.startsWith('crossref-') ||
+                  src.id.startsWith('doaj-') ||
                   src.id.startsWith('wiki-')
               );
             if (fetched.length > 0) {
@@ -345,7 +345,7 @@ export function FeedbackStudio() {
         setLoadingCritique(false);
       }
     },
-    [text, exclusions, customSources, includeLiveWeb]
+    [text, exclusions, excludedSourceIds, customSources, includeLiveWeb]
   );
 
   const handleSelectSample = (sampleId: string) => {
@@ -356,6 +356,9 @@ export function FeedbackStudio() {
     setAuthor(found.author);
     setText(found.text);
     setSelectedSourceRank(null);
+    setExcludedSourceIds([]);
+    setExtraFetchedSources([]);
+    setLiveWebSourcesCount(0);
     setAnchorResult(null);
     setEditorialCritique('');
   };
@@ -387,10 +390,9 @@ export function FeedbackStudio() {
       setAuthor(newAuthor);
       setText(data.parsed.text);
       setExcludedSourceIds([]);
-      if (Array.isArray(data.liveSources) && data.liveSources.length > 0) {
-        setExtraFetchedSources(data.liveSources);
-        setLiveWebSourcesCount(data.liveSources.length);
-      }
+      const incomingLive = Array.isArray(data.liveSources) ? data.liveSources : [];
+      setExtraFetchedSources(incomingLive);
+      setLiveWebSourcesCount(incomingLive.length);
       if (data.audit) {
         setUploadedInboxItems((prev) => [
           {
@@ -503,7 +505,7 @@ export function FeedbackStudio() {
       authors: 'User Provided Reference',
       publication: 'Direct Comparison Buffer',
       year: 2026,
-      url: 'https://citeward.vercel.app/#studio',
+      url: 'https://citeward.vercel.app/studio',
       category: 'publications',
       repository: 'Custom Reference Corpus',
       text: customText.trim(),
@@ -512,6 +514,69 @@ export function FeedbackStudio() {
     setCustomTitle('');
     setCustomText('');
     setShowCustomForm(false);
+  };
+
+  const handleUploadReferenceFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingRefDoc(true);
+    setUploadError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/parse-document?mode=reference', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.ok || !data?.parsed?.text) {
+        throw new Error(data?.error || 'Could not extract readable text from reference file.');
+      }
+      const refSource: CorpusSource = {
+        id: `custom-file-${Date.now()}`,
+        title: customTitle.trim() || data.parsed.extractedTitle || file.name,
+        authors: 'Uploaded Reference Document',
+        publication: `${String(data.parsed.fileType || 'DOC').toUpperCase()} Reference Comparison`,
+        year: 2026,
+        url: 'https://citeward.vercel.app/studio',
+        category: 'publications',
+        repository: 'User Reference File',
+        text: data.parsed.text,
+      };
+      setCustomSources((prev) => [...prev, refSource]);
+      setCustomTitle('');
+      setCustomText('');
+      setShowCustomForm(false);
+    } catch (err) {
+      const lower = file.name.toLowerCase();
+      if (lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.tex')) {
+        const rawText = await file.text();
+        if (rawText.trim()) {
+          setCustomSources((prev) => [
+            ...prev,
+            {
+              id: `custom-file-${Date.now()}`,
+              title: customTitle.trim() || file.name,
+              authors: 'Uploaded Reference Document',
+              publication: 'TXT Reference Comparison',
+              year: 2026,
+              url: 'https://citeward.vercel.app/studio',
+              category: 'publications',
+              repository: 'User Reference File',
+              text: rawText.slice(0, 120000),
+            },
+          ]);
+          setShowCustomForm(false);
+        }
+      } else {
+        setUploadError(
+          err instanceof Error ? err.message : 'Failed to parse reference PDF/DOCX file.'
+        );
+      }
+    } finally {
+      setUploadingRefDoc(false);
+      e.target.value = '';
+    }
   };
 
   const handleConnectBrowserWallet = async () => {
@@ -798,6 +863,24 @@ export function FeedbackStudio() {
                   <option value={5}>5 words</option>
                   <option value={8}>8 words (Turnitin Standard)</option>
                   <option value={12}>12 words</option>
+                </select>
+              </div>
+
+              <div className="inline-flex items-center gap-1.5 text-[var(--cw-ink-2)]">
+                <span>Denominator</span>
+                <select
+                  aria-label="Similarity denominator mode"
+                  value={exclusions.denominatorMode ?? 'total'}
+                  onChange={(e) =>
+                    setExclusions((prev) => ({
+                      ...prev,
+                      denominatorMode: e.target.value as 'total' | 'evaluable',
+                    }))
+                  }
+                  className="cw-mono text-xs px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[var(--cw-ink)]"
+                >
+                  <option value="total">Total Words (Turnitin)</option>
+                  <option value="evaluable">Excluded-Adjusted Words</option>
                 </select>
               </div>
             </div>
@@ -1243,9 +1326,39 @@ export function FeedbackStudio() {
 
                 {/* Ranked Source List */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider cw-mono text-[var(--cw-ink-3)]">
-                    {t.studio.matchOverviewTitle}
-                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider cw-mono text-[var(--cw-ink-3)]">
+                      {t.studio.matchOverviewTitle}
+                    </h3>
+                    <div
+                      role="group"
+                      aria-label="Turnitin source attribution mode"
+                      className="inline-flex rounded-[4px] border border-[var(--cw-rule)] bg-[var(--cw-sunken)] p-0.5 cw-mono text-[10px]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSourceViewMode('primary')}
+                        className={`px-2 py-0.5 rounded-[3px] cursor-pointer transition-colors ${
+                          sourceViewMode === 'primary'
+                            ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold shadow-xs'
+                            : 'text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
+                        }`}
+                      >
+                        Primary
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSourceViewMode('all')}
+                        className={`px-2 py-0.5 rounded-[3px] cursor-pointer transition-colors ${
+                          sourceViewMode === 'all'
+                            ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold shadow-xs'
+                            : 'text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
+                        }`}
+                      >
+                        All Sources
+                      </button>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-3">
                     {excludedSourceIds.length > 0 && (
                       <button
@@ -1262,7 +1375,7 @@ export function FeedbackStudio() {
                       className="inline-flex items-center gap-1 text-xs font-medium text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Compare Custom Text</span>
+                      <span>Compare Custom Text / File</span>
                     </button>
                   </div>
                 </div>
@@ -1289,11 +1402,39 @@ export function FeedbackStudio() {
                       placeholder={t.studio.customSourcePlaceholder}
                       className="w-full p-2.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] text-xs text-[var(--cw-ink)]"
                     />
-                    <button type="submit" className="cw-btn-primary text-xs !py-1.5 !px-3">
-                      {t.studio.addCustomSourceBtn}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button type="submit" className="cw-btn-primary text-xs !py-1.5 !px-3">
+                        {t.studio.addCustomSourceBtn}
+                      </button>
+                      <input
+                        ref={refFileInputRef}
+                        type="file"
+                        accept=".pdf,.docx,.odt,.rtf,.txt,.md,.tex"
+                        onChange={handleUploadReferenceFile}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => refFileInputRef.current?.click()}
+                        disabled={uploadingRefDoc}
+                        className="cw-btn-ghost text-xs !py-1.5 !px-3"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>
+                          {uploadingRefDoc
+                            ? 'Parsing Reference...'
+                            : 'Upload Ref .PDF / .DOCX'}
+                        </span>
+                      </button>
+                    </div>
                   </form>
                 )}
+
+                <p className="text-[11px] text-[var(--cw-ink-3)] leading-relaxed">
+                  Open corpus scope: Crossref DOI lookup, OpenAlex, DOAJ, Wikipedia (EN/ID),
+                  plus custom reference .PDF/.DOCX files using exact set-union Turnitin math
+                  (Primary mode avoids double-counting overlapping spans).
+                </p>
 
                 {audit.sources.length === 0 ? (
                   <div className="p-6 rounded-[8px] border border-[var(--cw-rule)] bg-[var(--cw-sunken)] text-center">
@@ -1307,6 +1448,14 @@ export function FeedbackStudio() {
                     {audit.sources.map((item) => {
                       const st = SERIES_STYLES[item.colorIndex] || SERIES_STYLES[1];
                       const expanded = selectedSourceRank === item.rank;
+                      const displayPct =
+                        sourceViewMode === 'primary'
+                          ? item.primarySimilarityPercent
+                          : item.similarityPercent;
+                      const displayWords =
+                        sourceViewMode === 'primary'
+                          ? item.primaryMatchedWords
+                          : item.matchedWords;
                       return (
                         <div
                           key={item.source.id}
@@ -1342,10 +1491,10 @@ export function FeedbackStudio() {
                             </div>
                             <div className="text-right shrink-0">
                               <div className="cw-mono text-base font-bold text-[var(--cw-ink)]">
-                                {item.similarityPercent}%
+                                {displayPct}%
                               </div>
                               <div className="cw-mono text-[11px] text-[var(--cw-ink-3)]">
-                                {item.matchedWords} words
+                                {displayWords} words
                               </div>
                             </div>
                           </button>
@@ -1355,17 +1504,34 @@ export function FeedbackStudio() {
                               <div className="flex flex-wrap items-center justify-between gap-2 cw-mono text-[11px] text-[var(--cw-ink-3)]">
                                 <span>
                                   Winnow Hashes: {item.winnowOverlapCount} · MinHash Jaccard:{' '}
-                                  {item.minHashJaccard}%
+                                  {item.minHashJaccard}% · Total Source Overlap:{' '}
+                                  {item.similarityPercent}% ({item.matchedWords}w)
                                 </span>
-                                <a
-                                  href={item.source.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-[var(--cw-signal-ink)] font-medium hover:underline"
-                                >
-                                  <span>Inspect Source DOI/URL</span>
-                                  <ExternalLink className="w-3 h-3" />
-                                </a>
+                                <div className="flex items-center gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setExcludedSourceIds((prev) =>
+                                        prev.includes(item.source.id)
+                                          ? prev
+                                          : [...prev, item.source.id]
+                                      );
+                                      setSelectedSourceRank(null);
+                                    }}
+                                    className="text-[var(--cw-bad)] font-semibold hover:underline cursor-pointer"
+                                  >
+                                    Exclude This Source
+                                  </button>
+                                  <a
+                                    href={item.source.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-[var(--cw-signal-ink)] font-medium hover:underline"
+                                  >
+                                    <span>Inspect Source DOI/URL</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
                               </div>
                               <div className="p-2.5 rounded-[5px] bg-[var(--cw-raised)] border border-[var(--cw-rule)] text-[var(--cw-ink-2)] leading-relaxed">
                                 <div className="cw-mono text-[10px] uppercase text-[var(--cw-ink-3)] mb-1">

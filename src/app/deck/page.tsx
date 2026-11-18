@@ -59,7 +59,7 @@ export default function DeckPage() {
             Canvas, SWOT analysis, competitive benchmark table, and walkthrough video.
           </p>
         </div>
-        <Link href="/#studio" className="cw-btn-primary text-xs shrink-0">
+        <Link href="/studio" className="cw-btn-primary text-xs shrink-0">
           <span>Launch Interactive Feedback Studio</span>
         </Link>
       </div>

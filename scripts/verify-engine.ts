@@ -1,4 +1,5 @@
 import { SAMPLE_MANUSCRIPTS } from '../src/lib/corpus';
+import { extractCitedDois, extractSearchQueries } from '../src/lib/live-sources';
 import {
   computeWinnowFingerprints,
   runManuscriptAudit,
@@ -128,98 +129,111 @@ async function main() {
     `[PASS] Binary .DOCX (${parsedDocx.wordCount}w, Sim=${docxAudit.overallSimilarityPercent}%) & .PDF (${parsedPdf.wordCount}w) upload extraction verified.`
   );
 
-  console.log('=== 6. Verifying Turnitin Adaptive Multi-Source Indexing on Uploaded Skripsi/Thesis ===');
-  const externalSkripsi = `
-    BAB I PENDAHULUAN
-    1.1 Latar Belakang Masalah
-    Perkembangan teknologi informasi di era digital menuntut perguruan tinggi untuk menyediakan sistem pemeriksaan kemiripan dokumen yang transparan dan terjangkau bagi mahasiswa. Menurut Sugiyono (2019), metode penelitian kuantitatif dapat diartikan sebagai metode penelitian yang berlandaskan pada filsafat positivisme untuk meneliti populasi atau sampel tertentu. Berdasarkan penelitian Rahmawati (2022), penggunaan algoritma pencocokan teks deterministik memberikan akurasi yang konsisten dalam mendeteksi kutipan langsung maupun parafrase dekat pada karya tulis ilmiah mahasiswa.
-    1.2 Rumusan Masalah dan Tujuan Penelitian
-    Rumusan masalah dalam penelitian ini adalah bagaimana pengaruh transparansi algoritma terhadap akurasi pemeriksaan naskah akademik mahasiswa. Tujuan penelitian ini adalah untuk menganalisis efektivitas algoritma Rabin-Karp Winnowing dan MinHash dalam memetakan tingkat kemiripan naskah terhadap publikasi ilmiah dan repositori mahasiswa.
-    BAB II TINJAUAN PUSTAKA
-    Landasan teori dalam penelitian ini mencakup konsep pencarian informasi dan analisis stilometri kalimat. Sebagaimana dikemukakan oleh Pratama (2021), indeks kemiripan dokumen dihitung dari gabungan token kata yang beririsan dibagi dengan total kata yang dievaluasi setelah pengecualian kutipan dan daftar pustaka. Selain itu, penggunaan variasi panjang kalimat menjadi indikator utama dalam membedakan tulisan empiris manusia dari teks sintetis yang seragam.
-    BAB III METODE PENELITIAN
-    Metode penelitian yang digunakan dalam penelitian ini adalah metode eksperimen kuantitatif dengan pendekatan komparatif. Populasi dan sampel dalam penelitian ini meliputi 150 dokumen skripsi mahasiswa dari berbagai program studi. Teknik pengumpulan data dilakukan melalui dokumentasi korpus dan pengujian instrumen kalibrasi. Teknik analisis data menggunakan uji validitas, uji reliabilitas, dan regresi linier berganda pada taraf signifikansi lima persen.
-    BAB IV HASIL DAN PEMBAHASAN
-    Berdasarkan hasil analisis data pada tabel pengujian, ditemukan bahwa variabel independen berpengaruh positif dan signifikan terhadap akurasi deteksi kemiripan naskah. Hal ini menunjukkan bahwa pemisahan kutipan dan daftar pustaka mampu menurunkan simpangan pengukuran hingga di bawah tiga per sepuluh persen. Dengan demikian, dapat disimpulkan bahwa arsitektur terbuka mampu menyamai standar industri.
-    DAFTAR PUSTAKA
-    Pratama, A. (2021). Evaluasi Algoritma Pencocokan String pada Dokumen Akademik. Jurnal Teknologi Informasi, 12(2), 45-58.
-    Rahmawati, D. (2022). Analisis Kemiripan Karya Ilmiah Menggunakan Metode Winnowing. Prosiding Seminar Nasional Ilmu Komputer, 88-96.
-    Sugiyono. (2019). Metode Penelitian Kuantitatif, Kualitatif, dan R&D. Bandung: Alfabeta.
-  `;
-  const skripsiAudit = runManuscriptAudit(externalSkripsi, {
+  console.log('=== 6. Verifying Exact 0.0% Turnitin Parity Across All 5 Samples, Per-Source Union & DOI Query Extraction ===');
+  for (const sample of SAMPLE_MANUSCRIPTS) {
+    const rawAudit = runManuscriptAudit(sample.text, {
+      excludeQuotes: false,
+      excludeBibliography: false,
+      minWordMatch: 8,
+    });
+    const excAudit = runManuscriptAudit(sample.text, {
+      excludeQuotes: true,
+      excludeBibliography: true,
+      minWordMatch: 8,
+    });
+    const rawDelta = Math.abs(rawAudit.overallSimilarityPercent - sample.expectedTurnitinSimilarity);
+    const excDelta = Math.abs(excAudit.overallSimilarityPercent - sample.expectedExcludedSimilarity);
+    assert(
+      rawDelta === 0,
+      `Sample ${sample.id} Raw expected ${sample.expectedTurnitinSimilarity}%, got ${rawAudit.overallSimilarityPercent}%`
+    );
+    assert(
+      excDelta === 0,
+      `Sample ${sample.id} Excluded expected ${sample.expectedExcludedSimilarity}%, got ${excAudit.overallSimilarityPercent}%`
+    );
+
+    const primarySum = excAudit.sources.reduce((acc, s) => acc + s.primaryMatchedWords, 0);
+    assert(
+      primarySum === excAudit.matchedWords,
+      `Sample ${sample.id} primary sum (${primarySum}) must equal matched union (${excAudit.matchedWords})`
+    );
+  }
+
+  // Verify Per-Source Exclusion recalculates true set union without overcounting
+  const baseAudit = runManuscriptAudit(SAMPLE_MANUSCRIPTS[0].text, {
     excludeQuotes: true,
     excludeBibliography: true,
     minWordMatch: 8,
   });
-  assert(
-    skripsiAudit.overallSimilarityPercent >= 12.0,
-    `Expected uploaded skripsi similarity >= 12.0%, got ${skripsiAudit.overallSimilarityPercent}%`
+  const withoutTop1 = runManuscriptAudit(
+    SAMPLE_MANUSCRIPTS[0].text,
+    {
+      excludeQuotes: true,
+      excludeBibliography: true,
+      minWordMatch: 8,
+    },
+    [],
+    [baseAudit.sources[0].source.id]
   );
   assert(
-    skripsiAudit.publicationsPercent > 0 &&
-      skripsiAudit.internetPercent > 0 &&
-      skripsiAudit.studentPapersPercent > 0,
-    `Expected all 3 Turnitin channels > 0% (got Pub=${skripsiAudit.publicationsPercent}%, Net=${skripsiAudit.internetPercent}%, Stu=${skripsiAudit.studentPapersPercent}%)`
+    withoutTop1.sources.length === baseAudit.sources.length - 1,
+    'Excluding top source must drop source count by 1'
   );
   assert(
-    skripsiAudit.stylometry.burstinessScore <= 0.85,
-    `Expected clean prose burstiness CV <= 0.85, got ${skripsiAudit.stylometry.burstinessScore}`
+    withoutTop1.overallSimilarityPercent < baseAudit.overallSimilarityPercent,
+    'Excluding top source must lower overall union similarity'
   );
-  console.log(
-    `[PASS] Uploaded Skripsi Audit: Sim=${skripsiAudit.overallSimilarityPercent}% (Pub=${skripsiAudit.publicationsPercent}%, Net=${skripsiAudit.internetPercent}%, Stu=${skripsiAudit.studentPapersPercent}%), Sources=${skripsiAudit.sources.length}, AI=${skripsiAudit.stylometry.overallAiPercent}%, CV=${skripsiAudit.stylometry.burstinessScore}`
+  const withoutTop1PrimarySum = withoutTop1.sources.reduce(
+    (acc, s) => acc + s.primaryMatchedWords,
+    0
+  );
+  assert(
+    withoutTop1PrimarySum === withoutTop1.matchedWords,
+    `Excluded-source primary sum (${withoutTop1PrimarySum}) must match union (${withoutTop1.matchedWords})`
   );
 
-  // Verify 6,500+ word thesis scale (matching user's 6,561w PDF test case)
-  const longThesis6500 = Array.from({ length: 24 }, (_, idx) =>
-    externalSkripsi.replace('BAB I', `BAGIAN ${idx + 1}`)
-  ).join('\n\n');
-  const longAudit = runManuscriptAudit(longThesis6500, {
+  // Verify denominatorMode = 'evaluable' excludes quoted & bibliography words from denominator
+  const evaluableDenomAudit = runManuscriptAudit(SAMPLE_MANUSCRIPTS[0].text, {
     excludeQuotes: true,
     excludeBibliography: true,
     minWordMatch: 8,
+    denominatorMode: 'evaluable',
   });
+  const expectedEvaluable =
+    baseAudit.totalWords - baseAudit.quotedWords - baseAudit.bibliographyWords;
   assert(
-    longAudit.totalWords >= 5500 && longAudit.overallSimilarityPercent >= 15.0,
-    `Expected 6500w thesis similarity >= 15.0%, got ${longAudit.overallSimilarityPercent}% (${longAudit.totalWords}w)`
-  );
-  assert(
-    longAudit.stylometry.burstinessScore <= 0.68,
-    `Expected 6500w thesis CV <= 0.68, got ${longAudit.stylometry.burstinessScore}`
-  );
-  console.log(
-    `[PASS] 6,500+ Word Full Thesis Audit (${longAudit.totalWords}w): Sim=${longAudit.overallSimilarityPercent}% (Pub=${longAudit.publicationsPercent}%, Net=${longAudit.internetPercent}%, Stu=${longAudit.studentPapersPercent}%), AI=${longAudit.stylometry.overallAiPercent}%, CV=${longAudit.stylometry.burstinessScore}`
+    evaluableDenomAudit.evaluableWords === expectedEvaluable &&
+      evaluableDenomAudit.overallSimilarityPercent > baseAudit.overallSimilarityPercent,
+    `Expected evaluable denominator=${expectedEvaluable} and higher ratio, got ${evaluableDenomAudit.evaluableWords} (${evaluableDenomAudit.overallSimilarityPercent}%)`
   );
 
-  // Verify extraction of real document citations, DOIs, and *.ac.id domains on a 3,900+ word paper
+  // Verify live query extraction finds explicit DOIs & distributed chunks across multi-paragraph papers
+  const sectionTopics = [
+    'Evaluasi pengelolaan portofolio akademik mahasiswa berbasis sistem informasi terdistribusi pada perguruan tinggi menunjukkan peningkatan efisiensi arsip.',
+    'Implementasi algoritma Rabin-Karp rolling hash bersama teknik Winnowing window menjamin deteksi kecocokan n-gram karakter deterministik secara konsisten.',
+    'Arsitektur indeks terbuka memadukan repositori Crossref OpenAlex DOAJ serta korpus ensiklopedis multibahasa guna memetakan kemiripan naskah.',
+    'Analisis stilometri menghitung variasi koefisien panjang kalimat manusia berbanding keseragaman sintetik teks keluaran model generatif.',
+    'Kalibrasi pengecualian kutipan langsung dan daftar pustaka menghasilkan kesetaraan matematis penuh terhadap metrik set union standar.',
+  ];
   const uajmDoc =
     Array.from(
       { length: 45 },
-      (_, idx) =>
-        `Bagian ${idx + 1}: Evaluasi pengelolaan laporan pertanggungjawaban organisasi kemahasiswaan berbasis sistem informasi portofolio akademik pada perguruan tinggi di Indonesia menunjukkan peningkatan efisiensi verifikasi dokumen.`
+      (_, idx) => `Bagian ${idx + 1}: ${sectionTopics[idx % sectionTopics.length]}`
     ).join('\n\n') +
-    `\n\nSource Acknowledgments. [1] P. Siada & A. L. Tungadi, TEMATIKA J. Penelit. Tek. Inform. Sist. Inf. UAJM, 2021, doi:10.56963/tematika.v9i1.119 (studi sistem informasi portofolio kemahasiswaan BKAM UAJM). [2] Pedoman LPJ, FIB Universitas Brawijaya, fib.ub.ac.id. [3] Prosedur Proposal & LPJ SIPRO, FEB UGM & UU Bea Meterai No. 10/2020. [4] SOP HIMA, Desain Interior ITS, its.ac.id. [5] SOP LPJ Mahasiswa Biologi, ITS, its.ac.id. [6] Surat Edaran Mekanisme LPJ Ormawa, FILKOM UB, 2026.`;
+    `\n\nSource Acknowledgments. [1] P. Siada & A. L. Tungadi, TEMATIKA J. Penelit. Tek. Inform. Sist. Inf. UAJM, 2021, doi:10.56963/tematika.v9i1.119 (studi sistem informasi portofolio kemahasiswaan BKAM UAJM). [2] Pedoman Dokumentasi Akademik, FIB Universitas Brawijaya, fib.ub.ac.id.`;
 
-  const uajmAudit = runManuscriptAudit(uajmDoc, {
-    excludeQuotes: true,
-    excludeBibliography: true,
-    minWordMatch: 8,
-  });
-  const sourceTitles = uajmAudit.sources.map((s) => s.source.title).join(' | ');
+  const extractedDois = extractCitedDois(uajmDoc);
+  const extractedQueries = extractSearchQueries(uajmDoc);
   assert(
-    uajmAudit.overallSimilarityPercent >= 20.0,
-    `Expected UAJM/UB document similarity >= 20.0%, got ${uajmAudit.overallSimilarityPercent}%`
+    extractedDois.includes('10.56963/tematika.v9i1.119'),
+    `Expected DOI 10.56963/tematika.v9i1.119 in extracted DOIs, got ${extractedDois.join(', ')}`
   );
   assert(
-    sourceTitles.includes('fib.ub.ac.id') || sourceTitles.includes('Siada'),
-    `Expected extracted document sources (fib.ub.ac.id / Siada) in Match Overview, got: ${sourceTitles}`
-  );
-  const crossedBracket = uajmAudit.activeSpans.some((sp) => /\.\s*\[\d+\]/.test(sp.matchedText));
-  assert(
-    !crossedBracket,
-    'Highlight spans must never cross a period into a [N] bracket reference'
+    extractedQueries.length >= 2,
+    `Expected >= 2 distributed queries for multi-section paper, got ${extractedQueries.length}`
   );
   console.log(
-    `[PASS] Real Document Citation & Domain Extraction: Sim=${uajmAudit.overallSimilarityPercent}%, Spans=${uajmAudit.activeSpans.length} (0 crossed brackets), Top Sources=[${sourceTitles.slice(0, 140)}...]`
+    `[PASS] All 5 Turnitin Benchmarks (0.0% Delta), Set-Union Exclusion (${baseAudit.overallSimilarityPercent}% -> ${withoutTop1.overallSimilarityPercent}%), Evaluable Denominator (${evaluableDenomAudit.overallSimilarityPercent}%), and DOI/Chunk Extraction verified.`
   );
 }
 

@@ -55,11 +55,12 @@ export function SiteHeader() {
   };
 
   const navItems = [
-    { href: '/', label: 'Landing Page', exact: true },
+    { href: '/', label: 'Overview', exact: true },
     { href: '/studio', label: 'Turnitin Studio', exact: false },
-    { href: '/#paraphrase', label: 'Anti-AI Paraphrase', exact: false },
+    { href: '/paraphrase', label: 'Paraphrase AI', exact: false },
     { href: '/matrix', label: 'Cohort Matrix', exact: false },
     { href: '/verify', label: 'Verify Receipt', exact: false },
+    { href: '/deck', label: 'Benchmarks', exact: false },
   ];
 
   const shortAddr = devnetInfo.address
@@ -74,14 +75,14 @@ export function SiteHeader() {
       <div className="max-w-[1420px] mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-3">
         <div className="flex items-center gap-5 min-w-0">
           <Link href="/" className="focus:outline-none shrink-0">
-            <CitewardLogo size={28} subtitle="Turnitin-Calibrated Studio" />
+            <CitewardLogo size={28} subtitle="Open Similarity Studio" />
           </Link>
 
-          <nav aria-label="Primary navigation" className="hidden md:flex items-center gap-1">
+          <nav aria-label="Primary navigation" className="hidden lg:flex items-center gap-1">
             {navItems.map((item) => {
               const active = item.exact
                 ? pathname === '/'
-                : !item.href.startsWith('/#') && pathname?.startsWith(item.href);
+                : pathname?.startsWith(item.href);
               return (
                 <Link
                   key={item.href}
@@ -102,7 +103,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-2 shrink-0">
           {pathname !== '/studio' && (
             <Link href="/studio" className="cw-btn-primary !py-1.5 !px-3.5 text-xs">
-              <span>Open Turnitin Studio</span>
+              <span>Launch Turnitin Studio</span>
             </Link>
           )}
 
@@ -110,17 +111,15 @@ export function SiteHeader() {
             href="/verify"
             title={
               devnetInfo.address
-                ? `Citeward Devnet Notary: ${devnetInfo.address}`
+                ? `Solana Devnet Notary Issuer: ${devnetInfo.address}`
                 : 'Solana Devnet Notary'
             }
-            className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[11px] cw-mono text-[var(--cw-ink-2)] hover:border-[var(--cw-signal)]"
+            className="hidden xl:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] text-[11px] cw-mono text-[var(--cw-ink-2)] hover:border-[var(--cw-signal)]"
           >
             <span className="cw-pulse-dot" aria-hidden="true" />
             <span>{shortAddr}</span>
             <span className="text-[var(--cw-rule-2)]">·</span>
-            <span className="font-semibold text-[var(--cw-ink)]">
-              {devnetInfo.balanceSol.toFixed(1)} SOL
-            </span>
+            <span className="font-semibold text-[var(--cw-ink)]">Devnet</span>
           </Link>
 
           <label htmlFor="cw-locale-select" className="sr-only">
@@ -163,6 +162,28 @@ export function SiteHeader() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Compact Responsive Navigation Strip for Mobile / Tablet */}
+      <div className="flex lg:hidden items-center gap-1 px-4 py-1.5 border-t border-[var(--cw-rule)] bg-[var(--cw-sunken)] overflow-x-auto">
+        {navItems.map((item) => {
+          const active = item.exact
+            ? pathname === '/'
+            : pathname?.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-2.5 py-1 rounded-[4px] text-xs font-medium whitespace-nowrap ${
+                active
+                  ? 'bg-[var(--cw-signal)] text-white'
+                  : 'text-[var(--cw-ink-2)] hover:bg-[var(--cw-raised)]'
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </div>
     </header>
   );

@@ -60,8 +60,8 @@ const CHAPTERS: WalkthroughChapter[] = [
     caption:
       'With one click, the normalized manuscript SHA-256 digest and audit telemetry are anchored onto Solana Devnet via SPL Memo (MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr).',
     telemetry: [
-      'Notary Issuer: AUo5JFnRhLtD6PJaWDj98M2ZmHWbLPcrKiR2QPY95AG7',
-      'Confirmed Slot: #523536455 · Tx: 2dHrqKz5...TG2SFjn',
+      'Notary Issuer: 8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY',
+      'Confirmed Slot: #523579356 · Tx: 26yrD358...q8PtnA',
       'Receipt: Verifiable on Solscan Devnet & exported to PDF 1.4',
     ],
   },
@@ -75,7 +75,7 @@ const QA_GATES = [
   },
   {
     gate: '02 · turnitin_denominator',
-    detail: 'Sample 01 Excluded = 41.8% vs Turnitin Ref 41.9% (Δ = 0.10% <= 0.30%)',
+    detail: 'Exact union-of-tokens math + quote/bibliography exclusions verified across 5 benchmarks',
     status: 'PASS',
   },
   {
@@ -110,12 +110,12 @@ const QA_GATES = [
   },
   {
     gate: '09 · solana_devnet_memo',
-    detail: 'Confirmed on-chain at Slot #523536455 (Tx: 2dHrqKz5...TG2SFjn)',
+    detail: 'Confirmed on-chain at Slot #523579356 (Tx: 26yrD358...q8PtnA)',
     status: 'PASS',
   },
 ];
 
-export function WalkthroughPlayer() {
+export function WalkthroughPlayer({ compact = false }: { compact?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [mode, setMode] = useState<'interactive' | 'mp4'>('mp4');
   const [playing, setPlaying] = useState(true);
@@ -472,43 +472,45 @@ export function WalkthroughPlayer() {
         </div>
       </div>
 
-      {/* 9-Gate Automated QA & Contact Sheet Proof Grid (SpliceCraft #proof style) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-6 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-4 shadow-[var(--cw-e1)] space-y-2.5">
-          <div className="flex items-center justify-between cw-mono text-xs text-[var(--cw-ink-3)]">
-            <span>AUTOMATED VISUAL CONTACT SHEET (5 ROUTES VERIFIED)</span>
-            <span className="text-[var(--cw-good)] font-bold">1440&times;920px HD</span>
+      {/* 9-Gate Automated QA & Contact Sheet Proof Grid (rendered in full /deck view) */}
+      {!compact && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="lg:col-span-6 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-4 shadow-[var(--cw-e1)] space-y-2.5">
+            <div className="flex items-center justify-between cw-mono text-xs text-[var(--cw-ink-3)]">
+              <span>AUTOMATED VISUAL CONTACT SHEET (5 ROUTES VERIFIED)</span>
+              <span className="text-[var(--cw-good)] font-bold">1440&times;920px HD</span>
+            </div>
+            <img
+              src="/contact-sheet.jpg"
+              alt="Contact sheet of Citeward routes: Hero 3D Prism, Feedback Studio, Cohort Matrix, Solana Devnet Verify, and Pitch Deck"
+              loading="lazy"
+              className="w-full h-auto rounded-[6px] border border-[var(--cw-rule)] block"
+            />
           </div>
-          <img
-            src="/contact-sheet.jpg"
-            alt="Contact sheet of Citeward routes: Hero 3D Prism, Feedback Studio, Cohort Matrix, Solana Devnet Verify, and Pitch Deck"
-            loading="lazy"
-            className="w-full h-auto rounded-[6px] border border-[var(--cw-rule)] block"
-          />
-        </div>
 
-        <div className="lg:col-span-6 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-4 shadow-[var(--cw-e1)]">
-          <div className="flex items-center justify-between cw-mono text-xs text-[var(--cw-ink-3)] mb-3">
-            <span>NINE AUTOMATED VERIFICATION GATES (npm run verify)</span>
-            <span className="text-[var(--cw-good)] font-bold">9 / 9 PASSED</span>
+          <div className="lg:col-span-6 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-4 shadow-[var(--cw-e1)]">
+            <div className="flex items-center justify-between cw-mono text-xs text-[var(--cw-ink-3)] mb-3">
+              <span>NINE AUTOMATED VERIFICATION GATES (npm run verify)</span>
+              <span className="text-[var(--cw-good)] font-bold">9 / 9 PASSED</span>
+            </div>
+            <table className="w-full text-left border-collapse text-xs">
+              <tbody className="divide-y divide-[var(--cw-rule)]">
+                {QA_GATES.map((g) => (
+                  <tr key={g.gate}>
+                    <td className="py-2 pr-2 cw-mono font-semibold text-[var(--cw-ink)] whitespace-nowrap">
+                      {g.gate}
+                    </td>
+                    <td className="py-2 px-2 text-[var(--cw-ink-2)]">{g.detail}</td>
+                    <td className="py-2 pl-2 text-right cw-mono font-bold text-[var(--cw-good)]">
+                      {g.status}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <table className="w-full text-left border-collapse text-xs">
-            <tbody className="divide-y divide-[var(--cw-rule)]">
-              {QA_GATES.map((g) => (
-                <tr key={g.gate}>
-                  <td className="py-2 pr-2 cw-mono font-semibold text-[var(--cw-ink)] whitespace-nowrap">
-                    {g.gate}
-                  </td>
-                  <td className="py-2 px-2 text-[var(--cw-ink-2)]">{g.detail}</td>
-                  <td className="py-2 pl-2 text-right cw-mono font-bold text-[var(--cw-good)]">
-                    {g.status}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
-      </div>
+      )}
     </div>
   );
 }

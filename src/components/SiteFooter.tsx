@@ -27,8 +27,13 @@ export function SiteFooter() {
             <div className="cw-kicker mb-2">Platform Modules</div>
             <ul className="space-y-1.5 text-[var(--cw-ink-2)]">
               <li>
-                <Link href="/#studio" className="hover:text-[var(--cw-ink)]">
-                  Feedback Studio Workspace
+                <Link href="/studio" className="hover:text-[var(--cw-ink)]">
+                  Turnitin Feedback Studio
+                </Link>
+              </li>
+              <li>
+                <Link href="/paraphrase" className="hover:text-[var(--cw-ink)]">
+                  Anti-AI Paraphrase Studio
                 </Link>
               </li>
               <li>
@@ -38,12 +43,12 @@ export function SiteFooter() {
               </li>
               <li>
                 <Link href="/verify" className="hover:text-[var(--cw-ink)]">
-                  Solana Devnet Receipt Verifier
+                  Digital Receipt &amp; Solana Verifier
                 </Link>
               </li>
               <li>
                 <Link href="/deck" className="hover:text-[var(--cw-ink)]">
-                  Pitch Deck & Architecture Roast
+                  Architecture &amp; Benchmarks
                 </Link>
               </li>
             </ul>
@@ -69,7 +74,7 @@ export function SiteFooter() {
               </li>
               <li>
                 <Skiper40Link
-                  href="https://solscan.io/account/AUo5JFnRhLtD6PJaWDj98M2ZmHWbLPcrKiR2QPY95AG7?cluster=devnet"
+                  href="https://solscan.io/account/8mKrzbpj7TZwcSXjnuAbKnE5y8cQ6SL9YNzf1U6tvHQY?cluster=devnet"
                   external
                 >
                   Solana Devnet Notary Account

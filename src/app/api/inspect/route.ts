@@ -11,8 +11,10 @@ const InspectSchema = z.object({
       excludeQuotes: z.boolean().default(false),
       excludeBibliography: z.boolean().default(true),
       minWordMatch: z.number().min(0).max(50).default(8),
+      denominatorMode: z.enum(['total', 'evaluable']).default('total'),
     })
     .optional(),
+  excludedSourceIds: z.array(z.string()).default([]),
   customSources: z
     .array(
       z.object({
@@ -100,7 +102,13 @@ export async function POST(req: NextRequest) {
 
     const {
       text,
-      exclusions = { excludeQuotes: false, excludeBibliography: true, minWordMatch: 8 },
+      exclusions = {
+        excludeQuotes: false,
+        excludeBibliography: true,
+        minWordMatch: 8,
+        denominatorMode: 'total' as const,
+      },
+      excludedSourceIds = [],
       customSources = [],
       includeLiveWeb,
       runDeepVoiceAudit,
@@ -112,7 +120,7 @@ export async function POST(req: NextRequest) {
     }
 
     const combinedExtra: CorpusSource[] = [...customSources, ...liveSources];
-    const audit = runManuscriptAudit(text, exclusions, combinedExtra);
+    const audit = runManuscriptAudit(text, exclusions, combinedExtra, excludedSourceIds);
 
     let editorialCritique = '';
     if (runDeepVoiceAudit) {

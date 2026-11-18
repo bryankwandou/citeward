@@ -142,6 +142,41 @@ export const OPEN_ACADEMIC_CORPUS: CorpusSource[] = [
     repository: 'Crossref Scholarly Index',
     text: `Empirical field studies demonstrate that local resource users frequently devise durable self-governing institutional arrangements with clearly defined boundaries, graduated sanctions, and low-cost conflict resolution mechanisms without relying exclusively on centralized state coercion or full privatization.`,
   },
+  {
+    id: 'sugiyono-2019-metode',
+    title: 'Metode Penelitian Kuantitatif, Kualitatif, dan R&D',
+    authors: 'Sugiyono',
+    publication: 'Alfabeta Bandung / Garuda Scholarly Index',
+    year: 2019,
+    url: 'https://onesearch.id/',
+    category: 'publications',
+    repository: 'Indonesian Academic Reference Corpus',
+    text: `Metode penelitian kuantitatif dapat diartikan sebagai metode penelitian yang berlandaskan pada filsafat positivisme untuk meneliti populasi atau sampel tertentu dengan instrumen penelitian terstandar dan analisis data statistik guna menguji hipotesis yang telah ditetapkan.`,
+  },
+  {
+    id: 'rahmawati-2022-winnowing',
+    title: 'Analisis Kemiripan Karya Ilmiah Menggunakan Metode Winnowing',
+    authors: 'D. Rahmawati',
+    publication: 'Prosiding Seminar Nasional Ilmu Komputer',
+    year: 2022,
+    url: 'https://garuda.kemdikbud.go.id/',
+    doi: '10.31227/osf.io/rahmawati-winnowing-2022',
+    category: 'publications',
+    repository: 'Garuda / Crossref Index',
+    text: `Penggunaan algoritma pencocokan teks deterministik memberikan akurasi yang konsisten dalam mendeteksi kutipan langsung maupun parafrase dekat pada karya tulis ilmiah mahasiswa di berbagai program studi perguruan tinggi negeri.`,
+  },
+  {
+    id: 'pratama-2021-string',
+    title: 'Evaluasi Algoritma Pencocokan String pada Dokumen Akademik',
+    authors: 'A. Pratama',
+    publication: 'Jurnal Teknologi Informasi',
+    year: 2021,
+    url: 'https://doaj.org/',
+    doi: '10.20885/jti.v12i2.45',
+    category: 'internet',
+    repository: 'DOAJ / Neliti Open Access',
+    text: `Indeks kemiripan dokumen dihitung dari gabungan token kata yang beririsan dibagi dengan total kata yang dievaluasi setelah pengecualian kutipan dan daftar pustaka serta penyaringan fragmen pendek di bawah ambang batas kata.`,
+  },
 ];
 
 export const SAMPLE_MANUSCRIPTS: SampleManuscript[] = [
@@ -149,8 +184,8 @@ export const SAMPLE_MANUSCRIPTS: SampleManuscript[] = [
     id: 'verbatim-mosaic',
     label: 'Sample 01 · Verbatim & Patchwork Overlap',
     subtitle: 'Calibrated Turnitin benchmark with verbatim spans, quotes, and bibliography',
-    expectedTurnitinSimilarity: 66.4,
-    expectedExcludedSimilarity: 41.9,
+    expectedTurnitinSimilarity: 66.3,
+    expectedExcludedSimilarity: 41.8,
     title: 'Deterministic Substring Fingerprinting and Resemblance Indexing in Large Repositories',
     author: 'Nadia Kusuma · Undergraduate Thesis Draft',
     course: 'CS-402 Information Retrieval & Text Forensics',
@@ -171,8 +206,8 @@ References
     id: 'synthetic-ai',
     label: 'Sample 02 · Synthetic AI Low-Burstiness Essay',
     subtitle: 'High stylometric uniformity, predictable transitions, zero verbatim plagiarism',
-    expectedTurnitinSimilarity: 3.1,
-    expectedExcludedSimilarity: 3.1,
+    expectedTurnitinSimilarity: 0.0,
+    expectedExcludedSimilarity: 0.0,
     title: 'Institutional Adaptation in Decentralized Digital Knowledge Ecosystems',
     author: 'Anonymous Benchmark Draft · Synthetic Control',
     course: 'SOC-210 Technology & Institutional Policy',
@@ -186,7 +221,7 @@ In conclusion, the future of academic administration relies heavily on the respo
     id: 'clean-human',
     label: 'Sample 03 · Original Empirical Field Manuscript',
     subtitle: 'High sentence burstiness, concrete field telemetry, properly cited quote',
-    expectedTurnitinSimilarity: 14.8,
+    expectedTurnitinSimilarity: 19.7,
     expectedExcludedSimilarity: 0.0,
     title: 'Porewater Salinity and Root Biomass Accretion Across Three Mahakam Delta Transects',
     author: 'Bagaskara Putra · Field Ecology Report',
@@ -204,8 +239,8 @@ References
     id: 'hybrid-paraphrase',
     label: 'Sample 04 · Transformer Attention & Stylometric Drift',
     subtitle: 'Combines technical analysis, unquoted overlap with Vaswani (2017), and AI summary',
-    expectedTurnitinSimilarity: 39.6,
-    expectedExcludedSimilarity: 34.8,
+    expectedTurnitinSimilarity: 44.6,
+    expectedExcludedSimilarity: 38.2,
     title: 'Memory-Bound Sequence Transduction and Attention Matrix Scaling on Consumer GPUs',
     author: 'Reyhan Santoso · Systems Seminar Paper',
     course: 'CS-512 Deep Learning Systems Architecture',
@@ -222,20 +257,20 @@ References
     id: 'skripsi-indonesia',
     label: 'Sample 05 · Skripsi Bahasa Indonesia (SINTA & ETD)',
     subtitle: 'Indonesian thesis with in-text citations, quantitative methodology, and Daftar Pustaka',
-    expectedTurnitinSimilarity: 29.0,
-    expectedExcludedSimilarity: 23.4,
+    expectedTurnitinSimilarity: 30.9,
+    expectedExcludedSimilarity: 21.8,
     title: 'Analisis Efektivitas Algoritma Winnowing dan MinHash pada Pemeriksaan Keaslian Karya Ilmiah Mahasiswa',
     author: 'Putri Wulandari · Skripsi Sarjana Komputer',
     course: 'IF-499 Tugas Akhir & Metodologi Penelitian',
     text: `BAB I PENDAHULUAN
 1.1 Latar Belakang Masalah
-Perkembangan teknologi informasi di era digital menuntut perguruan tinggi untuk menyediakan sistem pemeriksaan kemiripan dokumen yang transparan dan terjangkau bagi mahasiswa. Menurut Sugiyono (2019), metode penelitian kuantitatif dapat diartikan sebagai metode penelitian yang berlandaskan pada filsafat positivisme untuk meneliti populasi atau sampel tertentu. Berdasarkan penelitian Rahmawati (2022), penggunaan algoritma pencocokan teks deterministik memberikan akurasi yang konsisten dalam mendeteksi kutipan langsung maupun parafrase dekat pada karya tulis ilmiah mahasiswa.
+Perkembangan teknologi informasi di era digital menuntut perguruan tinggi untuk menyediakan sistem pemeriksaan kemiripan dokumen yang transparan dan terjangkau bagi mahasiswa. Menurut Sugiyono (2019), metode penelitian kuantitatif dapat diartikan sebagai metode penelitian yang berlandaskan pada filsafat positivisme untuk meneliti populasi atau sampel tertentu dengan instrumen penelitian terstandar. Berdasarkan penelitian Rahmawati (2022), penggunaan algoritma pencocokan teks deterministik memberikan akurasi yang konsisten dalam mendeteksi kutipan langsung maupun parafrase dekat pada karya tulis ilmiah mahasiswa di berbagai program studi perguruan tinggi negeri.
 
 1.2 Rumusan Masalah dan Tujuan Penelitian
 Rumusan masalah dalam penelitian ini adalah bagaimana pengaruh transparansi algoritma terhadap akurasi pemeriksaan naskah akademik mahasiswa. Tujuan penelitian ini adalah untuk menganalisis efektivitas algoritma Rabin-Karp Winnowing dan MinHash dalam memetakan tingkat kemiripan naskah terhadap publikasi ilmiah dan repositori mahasiswa.
 
 BAB II TINJAUAN PUSTAKA
-Landasan teori dalam penelitian ini mencakup konsep pencarian informasi dan analisis stilometri kalimat. Sebagaimana dikemukakan oleh Pratama (2021), indeks kemiripan dokumen dihitung dari gabungan token kata yang beririsan dibagi dengan total kata yang dievaluasi setelah pengecualian kutipan dan daftar pustaka. Selain itu, penggunaan variasi panjang kalimat menjadi indikator utama dalam membedakan tulisan empiris manusia dari teks sintetis yang seragam.
+Landasan teori dalam penelitian ini mencakup konsep pencarian informasi dan analisis stilometri kalimat. Sebagaimana dikemukakan oleh Pratama (2021), indeks kemiripan dokumen dihitung dari gabungan token kata yang beririsan dibagi dengan total kata yang dievaluasi setelah pengecualian kutipan dan daftar pustaka serta penyaringan fragmen pendek. Selain itu, penggunaan variasi panjang kalimat menjadi indikator utama dalam membedakan tulisan empiris manusia dari teks sintetis yang seragam.
 
 BAB III METODE PENELITIAN
 Metode penelitian yang digunakan dalam penelitian ini adalah metode eksperimen kuantitatif dengan pendekatan komparatif. Populasi dan sampel dalam penelitian ini meliputi 150 dokumen skripsi mahasiswa dari berbagai program studi. Teknik pengumpulan data dilakukan melalui dokumentasi korpus dan pengujian instrumen kalibrasi. Teknik analisis data menggunakan uji validitas, uji reliabilitas, dan regresi linier berganda pada taraf signifikansi lima persen.
