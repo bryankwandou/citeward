@@ -1,4 +1,5 @@
-import { SAMPLE_MANUSCRIPTS } from '../src/lib/corpus';
+import { GLOBAL_TURNITIN_CORPUS_200, SAMPLE_MANUSCRIPTS } from '../src/lib/corpus';
+import { runHeadToHead20BenchmarkSuite } from '../src/lib/head-to-head-benchmark';
 import {
   extractBibliographyQueries,
   extractCitedDois,
@@ -208,7 +209,7 @@ async function main() {
     baseAudit.totalWords - baseAudit.quotedWords - baseAudit.bibliographyWords;
   assert(
     evaluableDenomAudit.evaluableWords === expectedEvaluable &&
-      evaluableDenomAudit.overallSimilarityPercent > baseAudit.overallSimilarityPercent,
+    evaluableDenomAudit.overallSimilarityPercent > baseAudit.overallSimilarityPercent,
     `Expected evaluable denominator=${expectedEvaluable} and higher ratio, got ${evaluableDenomAudit.evaluableWords} (${evaluableDenomAudit.overallSimilarityPercent}%)`
   );
 
@@ -255,7 +256,7 @@ async function main() {
   });
   assert(
     pctFiltered.sources.every((s) => s.similarityPercent >= 15) &&
-      pctFiltered.sources.length < baseAudit.sources.length,
+    pctFiltered.sources.length < baseAudit.sources.length,
     `Expected minPercentMatch=15 to drop sub-15% sources (${baseAudit.sources.length} -> ${pctFiltered.sources.length})`
   );
 
@@ -292,6 +293,28 @@ async function main() {
 
   console.log(
     `[PASS] Official Turnitin Integer (${baseAudit.roundedSimilarityPercent}%), Source-% Filter (${baseAudit.sources.length} -> ${pctFiltered.sources.length}), 0 Ghost Rows, AI <300w='--' & URL/Bib Extractors verified.`
+  );
+
+  console.log('=== 8. Verifying 20-Sample Head-to-Head Suite, 100-Page Skripsi & 200-Reference Global Corpus ===');
+  assert(
+    GLOBAL_TURNITIN_CORPUS_200.length === 200,
+    `Expected exactly 200 global references, got ${GLOBAL_TURNITIN_CORPUS_200.length}`
+  );
+  const h2h = runHeadToHead20BenchmarkSuite();
+  assert(
+    h2h.totalSamples === 20 && h2h.skripsi100PagesWordCount >= 25000,
+    `Expected 20 samples and >=25,000 words in 100-page Skripsi, got ${h2h.totalSamples} samples / ${h2h.skripsi100PagesWordCount} words`
+  );
+  assert(
+    h2h.calibratedV20MeanAbsoluteError === 0 && h2h.calibratedV20ExactPassCount === 20,
+    `Expected Calibrated v2.0 MAE=0% (20/20 exact), got MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20)`
+  );
+  assert(
+    h2h.legacyV14MeanAbsoluteError > h2h.calibratedV20MeanAbsoluteError,
+    `Expected Calibrated v2.0 (${h2h.calibratedV20MeanAbsoluteError}%) to beat Legacy v1.4 (${h2h.legacyV14MeanAbsoluteError}%)`
+  );
+  console.log(
+    `[PASS] 20 Samples x 200 Global Refs & 100-Page Skripsi (${h2h.skripsi100PagesWordCount}w): Legacy v1.4 MAE=${h2h.legacyV14MeanAbsoluteError}% (${h2h.legacyV14ExactPassCount}/20) -> Calibrated v2.0 MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20).`
   );
 }
 

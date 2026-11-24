@@ -17,6 +17,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { CorpusSource, SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
+import { getHeadToHead20Samples } from '@/lib/head-to-head-benchmark';
 import { generateAuditPdfBlob } from '@/lib/pdf-report';
 import {
   ExclusionOptions,
@@ -179,13 +180,15 @@ export function FeedbackStudio() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const refFileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const allCalibrationSamples = useMemo(() => getHeadToHead20Samples(), []);
+
   // Sync preset selection if opened via /studio?sample=...
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
       const sampleParam = sp.get('sample');
       if (sampleParam) {
-        const found = SAMPLE_MANUSCRIPTS.find((s) => s.id === sampleParam);
+        const found = allCalibrationSamples.find((s) => s.id === sampleParam);
         if (found) {
           setSelectedSampleId(found.id);
           setTitle(found.title);
@@ -193,8 +196,8 @@ export function FeedbackStudio() {
           setText(found.text);
         }
       }
-    } catch {}
-  }, []);
+    } catch { }
+  }, [allCalibrationSamples]);
 
   // Deterministic set-union Turnitin audit
   const audit: IntegrityAuditResult = useMemo(() => {
@@ -250,8 +253,8 @@ export function FeedbackStudio() {
   }, [uploadedInboxItems]);
 
   const currentSample = useMemo(
-    () => SAMPLE_MANUSCRIPTS.find((s) => s.id === selectedSampleId) || null,
-    [selectedSampleId]
+    () => allCalibrationSamples.find((s) => s.id === selectedSampleId) || null,
+    [allCalibrationSamples, selectedSampleId]
   );
 
   const benchmarkCalibration = useMemo(() => {
@@ -267,8 +270,8 @@ export function FeedbackStudio() {
     }
     const expected =
       exclusions.excludeQuotes && exclusions.excludeBibliography
-        ? currentSample.expectedExcludedSimilarity
-        : currentSample.expectedTurnitinSimilarity;
+        ? currentSample.expectedTurnitinExcludedPercent
+        : currentSample.expectedTurnitinRawPercent;
     const delta = Math.abs(audit.overallSimilarityPercent - expected);
     return {
       expected: expected.toFixed(1),
@@ -328,7 +331,7 @@ export function FeedbackStudio() {
   );
 
   const handleSelectSample = (sampleId: string) => {
-    const found = SAMPLE_MANUSCRIPTS.find((s) => s.id === sampleId);
+    const found = allCalibrationSamples.find((s) => s.id === sampleId);
     if (!found) return;
     setSelectedSampleId(found.id);
     setTitle(found.title);
@@ -469,7 +472,7 @@ export function FeedbackStudio() {
       a.download = `citeward-manuscript-${audit.documentHashSha256.slice(0, 8)}.docx`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {}
+    } catch { }
   };
 
   const handleAddCustomSource = (e: React.FormEvent) => {
@@ -656,11 +659,10 @@ export function FeedbackStudio() {
       <div className="max-w-[1380px] mx-auto px-4 sm:px-6 space-y-4">
         {/* Clean Single-Row Studio Control Strip */}
         <div
-          className={`rounded-[10px] border p-3.5 transition-colors bg-[var(--cw-raised)] shadow-[var(--cw-e1)] flex flex-wrap items-center justify-between gap-3 ${
-            isDragOver
+          className={`rounded-[10px] border p-3.5 transition-colors bg-[var(--cw-raised)] shadow-[var(--cw-e1)] flex flex-wrap items-center justify-between gap-3 ${isDragOver
               ? 'border-2 border-dashed border-[var(--cw-signal)] bg-[var(--cw-signal-wash)]'
               : 'border-[var(--cw-rule-2)]'
-          }`}
+            }`}
         >
           <div className="flex flex-wrap items-center gap-2.5">
             <input
@@ -691,7 +693,7 @@ export function FeedbackStudio() {
               className="cw-mono text-xs px-2.5 py-2 rounded-[5px] border border-[var(--cw-rule-2)] bg-[var(--cw-paper)] text-[var(--cw-ink)] font-medium cursor-pointer"
             >
               {!currentSample && <option value="">Uploaded Document</option>}
-              {SAMPLE_MANUSCRIPTS.map((s) => (
+              {allCalibrationSamples.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>
@@ -701,11 +703,10 @@ export function FeedbackStudio() {
             <button
               type="button"
               onClick={() => setShowInboxTable((prev) => !prev)}
-              className={`cw-btn-ghost text-xs !py-2 !px-3 ${
-                showInboxTable
+              className={`cw-btn-ghost text-xs !py-2 !px-3 ${showInboxTable
                   ? '!border-[var(--cw-signal)] !bg-[var(--cw-signal-wash)]'
                   : ''
-              }`}
+                }`}
             >
               <Inbox className="w-3.5 h-3.5" />
               <span>Inbox ({inboxRows.length})</span>
@@ -897,11 +898,10 @@ export function FeedbackStudio() {
                     setViewerLayer('similarity');
                     setActiveTab('sources');
                   }}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${
-                    viewerLayer === 'similarity'
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${viewerLayer === 'similarity'
                       ? 'bg-[var(--cw-signal)] text-white font-semibold'
                       : 'text-[var(--cw-ink-2)]'
-                  }`}
+                    }`}
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>Similarity</span>
@@ -912,11 +912,10 @@ export function FeedbackStudio() {
                     setViewerLayer('ai');
                     setActiveTab('ai');
                   }}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${
-                    viewerLayer === 'ai'
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${viewerLayer === 'ai'
                       ? 'bg-[var(--cw-signal)] text-white font-semibold'
                       : 'text-[var(--cw-ink-2)]'
-                  }`}
+                    }`}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>AI Layer</span>
@@ -924,11 +923,10 @@ export function FeedbackStudio() {
                 <button
                   type="button"
                   onClick={() => setViewerLayer('edit')}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${
-                    viewerLayer === 'edit'
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${viewerLayer === 'edit'
                       ? 'bg-[var(--cw-signal)] text-white font-semibold'
                       : 'text-[var(--cw-ink-2)]'
-                  }`}
+                    }`}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>Edit Text</span>
@@ -977,8 +975,8 @@ export function FeedbackStudio() {
                       s.classification === 'synthetic'
                         ? 'bg-[#E5F4F8] text-[#045B70] rounded-[3px] px-0.5'
                         : s.classification === 'mixed'
-                        ? 'bg-[#F3EBFA] text-[#5A238C] rounded-[3px] px-0.5'
-                        : '';
+                          ? 'bg-[#F3EBFA] text-[#5A238C] rounded-[3px] px-0.5'
+                          : '';
                     return (
                       <span
                         key={i}
@@ -1008,11 +1006,9 @@ export function FeedbackStudio() {
                             selectedSourceRank === sp.sourceRank ? null : sp.sourceRank
                           );
                         }}
-                        className={`cursor-pointer rounded-[3px] px-0.5 transition-colors ${
-                          st.wash
-                        } ${st.text} ${
-                          isSelected ? 'ring-2 ring-[var(--cw-signal)]' : ''
-                        }`}
+                        className={`cursor-pointer rounded-[3px] px-0.5 transition-colors ${st.wash
+                          } ${st.text} ${isSelected ? 'ring-2 ring-[var(--cw-signal)]' : ''
+                          }`}
                       >
                         <span className="whitespace-nowrap">
                           <sup
@@ -1043,11 +1039,10 @@ export function FeedbackStudio() {
                   setViewerLayer('similarity');
                   setActiveTab('sources');
                 }}
-                className={`text-left p-3.5 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${
-                  activeTab === 'sources' || activeTab === 'filters'
+                className={`text-left p-3.5 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'sources' || activeTab === 'filters'
                     ? 'border-[var(--cw-corpus)]'
                     : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
-                }`}
+                  }`}
               >
                 <div className="cw-mono text-[10px] uppercase tracking-wider text-[var(--cw-ink-3)]">
                   Similarity Score
@@ -1068,11 +1063,10 @@ export function FeedbackStudio() {
                   setViewerLayer('ai');
                   setActiveTab('ai');
                 }}
-                className={`text-left p-3.5 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${
-                  activeTab === 'ai'
+                className={`text-left p-3.5 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'ai'
                     ? 'border-[var(--cw-stylo)]'
                     : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
-                }`}
+                  }`}
               >
                 <div className="cw-mono text-[10px] uppercase tracking-wider text-[var(--cw-ink-3)]">
                   AI Writing Indicator
@@ -1099,11 +1093,10 @@ export function FeedbackStudio() {
                 role="tab"
                 aria-selected={activeTab === 'sources'}
                 onClick={() => setActiveTab('sources')}
-                className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${
-                  activeTab === 'sources'
+                className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${activeTab === 'sources'
                     ? 'border-[#B3261E] text-[#B3261E] bg-[var(--cw-raised)]'
                     : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
-                }`}
+                  }`}
               >
                 Sources ({audit.sources.length})
               </button>
@@ -1112,11 +1105,10 @@ export function FeedbackStudio() {
                 role="tab"
                 aria-selected={activeTab === 'filters'}
                 onClick={() => setActiveTab('filters')}
-                className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${
-                  activeTab === 'filters'
+                className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${activeTab === 'filters'
                     ? 'border-[#B3261E] text-[#B3261E] bg-[var(--cw-raised)]'
                     : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
-                }`}
+                  }`}
               >
                 Filters &amp; Math
               </button>
@@ -1125,11 +1117,10 @@ export function FeedbackStudio() {
                 role="tab"
                 aria-selected={activeTab === 'ai'}
                 onClick={() => setActiveTab('ai')}
-                className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${
-                  activeTab === 'ai'
+                className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${activeTab === 'ai'
                     ? 'border-[var(--cw-corpus)] text-[var(--cw-corpus-ink)] bg-[var(--cw-raised)]'
                     : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
-                }`}
+                  }`}
               >
                 AI Report
               </button>
@@ -1168,22 +1159,20 @@ export function FeedbackStudio() {
                     <button
                       type="button"
                       onClick={() => setSourceViewMode('primary')}
-                      className={`px-2 py-0.5 rounded-[3px] cursor-pointer ${
-                        sourceViewMode === 'primary'
+                      className={`px-2 py-0.5 rounded-[3px] cursor-pointer ${sourceViewMode === 'primary'
                           ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold'
                           : 'text-[var(--cw-ink-3)]'
-                      }`}
+                        }`}
                     >
                       Primary Sources
                     </button>
                     <button
                       type="button"
                       onClick={() => setSourceViewMode('all')}
-                      className={`px-2 py-0.5 rounded-[3px] cursor-pointer ${
-                        sourceViewMode === 'all'
+                      className={`px-2 py-0.5 rounded-[3px] cursor-pointer ${sourceViewMode === 'all'
                           ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold'
                           : 'text-[var(--cw-ink-3)]'
-                      }`}
+                        }`}
                     >
                       All Sources
                     </button>
@@ -1288,11 +1277,10 @@ export function FeedbackStudio() {
                       return (
                         <div
                           key={item.source.id}
-                          className={`rounded-[8px] border transition-colors ${
-                            expanded
+                          className={`rounded-[8px] border transition-colors ${expanded
                               ? 'border-[var(--cw-signal)] bg-[var(--cw-sunken)]'
                               : 'border-[var(--cw-rule)] bg-[var(--cw-paper)]'
-                          }`}
+                            }`}
                         >
                           <button
                             type="button"
@@ -1533,11 +1521,10 @@ export function FeedbackStudio() {
 
                 {/* Turnitin Document Integrity Flags */}
                 <div
-                  className={`p-3 rounded-[8px] border cw-mono text-[11px] flex items-center justify-between ${
-                    manipFlags.homoglyphCount > 0 || manipFlags.zeroWidthCount > 0
+                  className={`p-3 rounded-[8px] border cw-mono text-[11px] flex items-center justify-between ${manipFlags.homoglyphCount > 0 || manipFlags.zeroWidthCount > 0
                       ? 'border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] font-semibold'
                       : 'border-[var(--cw-rule)] bg-[var(--cw-paper)] text-[var(--cw-ink-2)]'
-                  }`}
+                    }`}
                 >
                   <span>Character Flags (Replaced / Hidden):</span>
                   <span>

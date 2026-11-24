@@ -161,13 +161,17 @@ const FORMULAIC_MARKERS: string[] = [
 const BIBLIOGRAPHY_HEADINGS_GLOBAL =
   /^(?:\s*(?:bab\s+[ivx0-9]+\s*)?(?:\d+(?:\.\d+)*\s*)?)?(references|bibliography|daftar\s+pustaka|daftar\s+referensi|works\s+cited|bibliografi|referensi|kepustakaan|rujukan)\s*:?\s*$/gim;
 
+const POST_BIBLIOGRAPHY_HEADINGS_GLOBAL =
+  /^(?:\s*(?:bab\s+[ivx0-9]+\s*)?(?:\d+(?:\.\d+)*\s*)?)?(lampiran(?:\s+[a-z0-9]+)?|appendix(?:\s+[a-z0-9]+)?|appendices|curriculum\s+vitae|riwayat\s+hidup|biografi\s+penulis)\b[^\r\n]*$/gim;
+
 /**
- * Detects character intervals inside quotation marks ("...", “...”, «...»)
- * as well as Markdown blockquotes (> ...).
+ * Detects character intervals inside quotation marks ("...", “...”, mixed “...", «...»),
+ * Markdown blockquotes (> ...), and APA / Skripsi indented block quotations (4+ leading spaces or tab).
  */
 export function findQuotedIntervals(text: string): Array<[number, number]> {
   const intervals: Array<[number, number]> = [];
-  const regex = /(?:"([^"]{15,})"|“([^”]{15,})”|«([^»]{15,})»|^\s*>\s+([^\r\n]{15,}))/gm;
+  const regex =
+    /(?:["“„]([^"“”„]{15,})["”]|«([^»]{15,})»|^\s*>\s+([^\r\n]{15,})|^(?: {4,}|\t)\S[^\r\n]{75,}(?:\r?\n(?: {4,}|\t)\S[^\r\n]+)*)/gm;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
     intervals.push([m.index, m.index + m[0].length]);
@@ -176,26 +180,20 @@ export function findQuotedIntervals(text: string): Array<[number, number]> {
 }
 
 /**
- * Detects character offset where the trailing References / Bibliography / Daftar Pustaka section begins.
- * Searches only in the final 42% of the document and takes the LAST heading match so it NEVER
- * triggers on "DAFTAR PUSTAKA" or "References" inside a front-matter Table of Contents (Daftar Isi).
+ * Detects character offset where the References / Bibliography / Daftar Pustaka section begins.
+ * Ignores Table of Contents lines (lines followed by dot leaders ".... 12" or "hal. 12").
  */
 export function findBibliographyStart(text: string): number {
   if (!text || text.length < 120) return text.length;
 
-  // Scan trailing half of the document and prefer headings that do NOT sit inside a Table of Contents (lines with ".... 12")
-  const searchFloor = Math.floor(text.length * 0.45);
   let lastHeadingOffset = -1;
-
   BIBLIOGRAPHY_HEADINGS_GLOBAL.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = BIBLIOGRAPHY_HEADINGS_GLOBAL.exec(text)) !== null) {
-    if (m.index >= searchFloor) {
-      const lookahead = text.slice(m.index, m.index + 320);
-      const looksLikeToc = /\.\.\.\.\s*\d+|hal\.\s*\d+/i.test(lookahead);
-      if (!looksLikeToc) {
-        lastHeadingOffset = m.index;
-      }
+    const lookahead = text.slice(m.index, m.index + 320);
+    const looksLikeToc = /\.\.\.\.\s*\d+|\.\s+\.\s+\.\s*\d+|\b(?:hal|hlm)\.\s*\d+/i.test(lookahead);
+    if (!looksLikeToc) {
+      lastHeadingOffset = m.index;
     }
   }
 
@@ -218,11 +216,32 @@ export function findBibliographyStart(text: string): number {
 }
 
 /**
+ * Detects where the Bibliography section ends if followed by Appendices (Lampiran / Appendix / CV),
+ * matching Turnitin's rule that bibliography exclusion terminates at post-bibliography sections.
+ */
+export function findBibliographyEnd(text: string, bibStart: number): number {
+  if (!text || bibStart >= text.length) return text.length;
+  const afterBib = text.slice(bibStart);
+  POST_BIBLIOGRAPHY_HEADINGS_GLOBAL.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = POST_BIBLIOGRAPHY_HEADINGS_GLOBAL.exec(afterBib)) !== null) {
+    if (m.index < 24) continue;
+    const lookahead = afterBib.slice(m.index, m.index + 240);
+    const looksLikeToc = /\.\.\.\.\s*\d+|\.\s+\.\s+\.\s*\d+/i.test(lookahead);
+    if (!looksLikeToc) {
+      return bibStart + m.index;
+    }
+  }
+  return text.length;
+}
+
+/**
  * Tokenizes manuscript into normalized words while preserving exact character offsets
  */
 export function tokenizeManuscript(text: string): WordToken[] {
   const quotedIntervals = findQuotedIntervals(text);
   const bibStart = findBibliographyStart(text);
+  const bibEnd = findBibliographyEnd(text, bibStart);
   const tokens: WordToken[] = [];
   // Keep academic domains (e.g. fib.ub.ac.id, its.ac.id) and DOIs (10.56963/...) as indivisible tokens so highlights never chop URLs in half
   const wordRegex =
@@ -234,7 +253,7 @@ export function tokenizeManuscript(text: string): WordToken[] {
     const start = match.index;
     const end = start + match[0].length;
     const inQuote = quotedIntervals.some(([qs, qe]) => start >= qs && end <= qe);
-    const inBibliography = start >= bibStart;
+    const inBibliography = start >= bibStart && end <= bibEnd;
     tokens.push({
       word: match[0].toLowerCase(),
       raw: match[0],
@@ -378,36 +397,121 @@ export function estimateMinHashJaccard(sigA: Uint32Array, sigB: Uint32Array): nu
   return equal / sigA.length;
 }
 
-/**
- * Aligns manuscript tokens against a candidate source using 3-word shingle indexing
- * + gap bridging (to detect both verbatim copies and close patchwork modifications).
- */
-function alignSourceSpans(
-  docText: string,
-  docTokens: WordToken[],
-  source: CorpusSource,
-  exclusions: ExclusionOptions
-): { spans: MatchSpan[]; winnowOverlap: number; jaccard: number } {
+interface CachedSourceIndex {
+  srcTokens: WordToken[];
+  srcShingleSet: Set<string>;
+  srcTrigramPos: Map<string, number[]>;
+  srcBigramPos: Map<string, number[]>;
+  srcFpSet: Set<number>;
+  sigSrc: Uint32Array;
+}
+
+const SOURCE_INDEX_CACHE = new Map<string, CachedSourceIndex>();
+
+function getSourceIndex(source: CorpusSource): CachedSourceIndex {
+  const cacheKey = `${source.id}::${source.text.length}`;
+  const cached = SOURCE_INDEX_CACHE.get(cacheKey);
+  if (cached) return cached;
+
   const fullSourceString = `${source.authors} ${source.year} ${source.title} ${source.publication} ${source.text}`;
   const srcTokens = tokenizeManuscript(fullSourceString);
-  if (docTokens.length < 3 || srcTokens.length < 3) {
-    return { spans: [], winnowOverlap: 0, jaccard: 0 };
-  }
+  const bodyTokens = tokenizeManuscript(source.text);
 
-  // Build 3-word shingle lookup from source
   const srcShingleSet = new Set<string>();
   for (let i = 0; i <= srcTokens.length - 3; i++) {
     srcShingleSet.add(`${srcTokens[i].word} ${srcTokens[i + 1].word} ${srcTokens[i + 2].word}`);
   }
 
-  // Mark which docTokens are covered by matching 3-word shingles
+  const srcTrigramPos = new Map<string, number[]>();
+  for (let i = 0; i <= bodyTokens.length - 3; i++) {
+    const k3 = `${bodyTokens[i].word} ${bodyTokens[i + 1].word} ${bodyTokens[i + 2].word}`;
+    const list = srcTrigramPos.get(k3);
+    if (list) list.push(i);
+    else srcTrigramPos.set(k3, [i]);
+  }
+
+  const srcBigramPos = new Map<string, number[]>();
+  for (let i = 0; i <= bodyTokens.length - 2; i++) {
+    if (bodyTokens[i].word.length < 4 && bodyTokens[i + 1].word.length < 4) continue;
+    const k2 = `${bodyTokens[i].word} ${bodyTokens[i + 1].word}`;
+    const list = srcBigramPos.get(k2);
+    if (list) list.push(i);
+    else srcBigramPos.set(k2, [i]);
+  }
+
+  const srcFpSet = new Set(computeWinnowFingerprints(source.text).map((f) => f.hash));
+  const sigSrc = computeMinHashSignature(srcTokens);
+
+  const built: CachedSourceIndex = {
+    srcTokens,
+    srcShingleSet,
+    srcTrigramPos,
+    srcBigramPos,
+    srcFpSet,
+    sigSrc,
+  };
+  SOURCE_INDEX_CACHE.set(cacheKey, built);
+  return built;
+}
+
+/**
+ * Aligns manuscript tokens against a candidate source using 3-word shingle indexing,
+ * colinear 2-gram patchwriting alignment, intra-sentence gap bridging, and
+ * partial-quote / partial-bibliography sub-span splitting.
+ */
+function alignSourceSpans(
+  docText: string,
+  docTokens: WordToken[],
+  source: CorpusSource,
+  exclusions: ExclusionOptions,
+  precomputedDocFp?: WinnowFingerprint[],
+  precomputedSigDoc?: Uint32Array,
+  precomputedDocTrigrams?: string[],
+  precomputedDocBigrams?: string[]
+): { spans: MatchSpan[]; winnowOverlap: number; jaccard: number } {
+  const srcIdx = getSourceIndex(source);
+  const { srcTokens, srcShingleSet, srcTrigramPos, srcBigramPos, srcFpSet, sigSrc } = srcIdx;
+  if (docTokens.length < 3 || srcTokens.length < 3) {
+    return { spans: [], winnowOverlap: 0, jaccard: 0 };
+  }
+
+  // Track matched mask and mapped source body token positions for colinear patchwriting chaining
   const matchedMask = new Uint8Array(docTokens.length);
+  const tokenSrcPositions: Array<number[] | null> = new Array(docTokens.length).fill(null);
+  let trigramHits = 0;
+
   for (let i = 0; i <= docTokens.length - 3; i++) {
-    const key = `${docTokens[i].word} ${docTokens[i + 1].word} ${docTokens[i + 2].word}`;
+    const key = precomputedDocTrigrams
+      ? precomputedDocTrigrams[i]
+      : `${docTokens[i].word} ${docTokens[i + 1].word} ${docTokens[i + 2].word}`;
     if (srcShingleSet.has(key)) {
+      trigramHits++;
       matchedMask[i] = 1;
       matchedMask[i + 1] = 1;
       matchedMask[i + 2] = 1;
+      const posList = srcTrigramPos.get(key);
+      if (posList) {
+        tokenSrcPositions[i] = posList;
+        tokenSrcPositions[i + 1] = posList.map((p) => p + 1);
+        tokenSrcPositions[i + 2] = posList.map((p) => p + 2);
+      }
+    }
+  }
+
+  // Fast skip if neither 3-grams nor at least 3 source bigrams appear in the document
+  if (trigramHits === 0) {
+    let bigramHits = 0;
+    for (let i = 0; i <= docTokens.length - 2; i++) {
+      const bKey = precomputedDocBigrams
+        ? precomputedDocBigrams[i]
+        : `${docTokens[i].word} ${docTokens[i + 1].word}`;
+      if (srcBigramPos.has(bKey)) {
+        bigramHits++;
+        if (bigramHits >= 3) break;
+      }
+    }
+    if (bigramHits < 3) {
+      return { spans: [], winnowOverlap: 0, jaccard: 0 };
     }
   }
 
@@ -421,8 +525,90 @@ function alignSourceSpans(
     return /[.!?\r\n]|\[\s*\d+\s*\]/.test(between);
   };
 
-  // Bridge 1-to-2 word synonym substitutions inside the SAME sentence only (never bridge across periods or [N] brackets!)
+  // Colinear 2-gram patchwriting alignment within the same sentence (detects synonym swaps every 2-3 words)
   let bridgedAny = false;
+  for (let pass = 0; pass < 3; pass++) {
+    let addedInPass = false;
+    for (let i = 0; i <= docTokens.length - 2; i++) {
+      if (docTokens[i].inBibliography || docTokens[i + 1].inBibliography) continue;
+      if (matchedMask[i] === 1 && matchedMask[i + 1] === 1) continue;
+      if (hasSentenceBoundary(i, i + 1)) continue;
+
+      const bKey = `${docTokens[i].word} ${docTokens[i + 1].word}`;
+      const bPositions = srcBigramPos.get(bKey);
+      if (!bPositions) continue;
+
+      // Check forward/backward proximity to an existing anchor in the same sentence across a 1-to-2 word swap
+      let confirmedPos: number[] | null = null;
+      for (const anchorOffset of [-2, -3, 2, 3]) {
+        const anchorIdx = i + anchorOffset;
+        if (anchorIdx < 0 || anchorIdx >= docTokens.length) continue;
+        const anchorSrc = tokenSrcPositions[anchorIdx];
+        if (!anchorSrc) continue;
+        const minI = Math.min(i, anchorIdx);
+        const maxI = Math.max(i + 1, anchorIdx);
+        let crossesSentence = false;
+        for (let k = minI; k < maxI; k++) {
+          if (hasSentenceBoundary(k, k + 1)) {
+            crossesSentence = true;
+            break;
+          }
+        }
+        if (crossesSentence) continue;
+
+        const matchingP = bPositions.filter((bp) =>
+          anchorSrc.some((ap) => {
+            const srcDelta = bp - ap;
+            return anchorOffset < 0
+              ? srcDelta >= 2 && srcDelta <= 5
+              : srcDelta <= -2 && srcDelta >= -5;
+          })
+        );
+        if (matchingP.length > 0) {
+          confirmedPos = matchingP;
+          break;
+        }
+      }
+
+      // Also detect a chain of >= 3 colinear 2-grams separated by 1-word swaps in the same sentence even without a 3-gram seed
+      if (!confirmedPos && pass === 0 && i <= docTokens.length - 8) {
+        const i2 = i + 3;
+        const i3 = i + 6;
+        if (
+          i3 + 1 < docTokens.length &&
+          !hasSentenceBoundary(i, i3 + 1)
+        ) {
+          const b2 = srcBigramPos.get(`${docTokens[i2].word} ${docTokens[i2 + 1].word}`);
+          const b3 = srcBigramPos.get(`${docTokens[i3].word} ${docTokens[i3 + 1].word}`);
+          if (b2 && b3) {
+            const chainP = bPositions.filter((p1) =>
+              b2.some(
+                (p2) =>
+                  p2 - p1 >= 2 &&
+                  p2 - p1 <= 4 &&
+                  b3.some((p3) => p3 - p2 >= 2 && p3 - p2 <= 4)
+              )
+            );
+            if (chainP.length > 0) {
+              confirmedPos = chainP;
+            }
+          }
+        }
+      }
+
+      if (confirmedPos) {
+        matchedMask[i] = 1;
+        matchedMask[i + 1] = 1;
+        tokenSrcPositions[i] = confirmedPos;
+        tokenSrcPositions[i + 1] = confirmedPos.map((p) => p + 1);
+        addedInPass = true;
+        bridgedAny = true;
+      }
+    }
+    if (!addedInPass) break;
+  }
+
+  // Bridge 1-to-2 word synonym substitutions inside the SAME sentence only (never bridge across periods or [N] brackets!)
   for (let i = 1; i < docTokens.length - 2; i++) {
     if (
       matchedMask[i - 1] === 1 &&
@@ -447,7 +633,13 @@ function alignSourceSpans(
   }
 
   // Extract contiguous runs of matched tokens, splitting cleanly at sentence / [N] reference boundaries
+  // and enforcing minRequiredWords on unexcluded sub-runs when quote/bibliography exclusions bisect a span.
   const spans: MatchSpan[] = [];
+  const minRequiredWords = exclusions.minWordMatch > 0 ? exclusions.minWordMatch : 3;
+  const isTokenExcluded = (t: WordToken): boolean =>
+    (exclusions.excludeQuotes && t.inQuote) ||
+    (exclusions.excludeBibliography && t.inBibliography);
+
   let idx = 0;
   while (idx < docTokens.length) {
     if (matchedMask[idx] === 1) {
@@ -463,52 +655,68 @@ function alignSourceSpans(
       const endWordIdx = idx - 1;
       const wordCount = endWordIdx - startWordIdx + 1;
 
-      const minRequiredWords = exclusions.minWordMatch > 0 ? exclusions.minWordMatch : 3;
-
       if (wordCount >= minRequiredWords) {
-        const startChar = docTokens[startWordIdx].start;
-        const endChar = docTokens[endWordIdx].end;
-        const inQuote = docTokens
-          .slice(startWordIdx, endWordIdx + 1)
-          .every((t) => t.inQuote);
-        const inBibliography = docTokens
-          .slice(startWordIdx, endWordIdx + 1)
-          .some((t) => t.inBibliography);
+        // Partition run into contiguous sub-runs by exclusion status so partial quotes never leak <minWordMatch fragments
+        const subRuns: Array<{ sIdx: number; eIdx: number; tokExcluded: boolean }> = [];
+        let curStart = startWordIdx;
+        let curExc = isTokenExcluded(docTokens[startWordIdx]);
+        for (let w = startWordIdx + 1; w <= endWordIdx; w++) {
+          const exc = isTokenExcluded(docTokens[w]);
+          if (exc !== curExc) {
+            subRuns.push({ sIdx: curStart, eIdx: w - 1, tokExcluded: curExc });
+            curStart = w;
+            curExc = exc;
+          }
+        }
+        subRuns.push({ sIdx: curStart, eIdx: endWordIdx, tokExcluded: curExc });
 
-        const excluded =
-          (exclusions.excludeQuotes && inQuote) ||
-          (exclusions.excludeBibliography && inBibliography);
+        for (const sub of subRuns) {
+          const subCount = sub.eIdx - sub.sIdx + 1;
+          const subStartChar = docTokens[sub.sIdx].start;
+          const subEndChar = docTokens[sub.eIdx].end;
+          const subInQuote = docTokens
+            .slice(sub.sIdx, sub.eIdx + 1)
+            .every((t) => t.inQuote);
+          const subInBib = docTokens
+            .slice(sub.sIdx, sub.eIdx + 1)
+            .some((t) => t.inBibliography);
 
-        spans.push({
-          sourceId: source.id,
-          sourceRank: 0,
-          colorIndex: 1,
-          startChar,
-          endChar,
-          startWordIdx,
-          endWordIdx,
-          wordCount,
-          matchedText: docText.slice(startChar, endChar),
-          sourceExcerpt: source.text.slice(0, 280),
-          inQuote,
-          inBibliography,
-          excluded,
-          matchType: bridgedAny ? 'patchwork_shingle' : 'exact_winnow',
-        });
+          // An unexcluded sub-run is only active if its own contiguous unexcluded length >= minRequiredWords
+          const effectiveExcluded = sub.tokExcluded || subCount < minRequiredWords;
+
+          spans.push({
+            sourceId: source.id,
+            sourceRank: 0,
+            colorIndex: 1,
+            startChar: subStartChar,
+            endChar: subEndChar,
+            startWordIdx: sub.sIdx,
+            endWordIdx: sub.eIdx,
+            wordCount: subCount,
+            matchedText: docText.slice(subStartChar, subEndChar),
+            sourceExcerpt: source.text.slice(0, 280),
+            inQuote: subInQuote,
+            inBibliography: subInBib,
+            excluded: effectiveExcluded,
+            matchType: bridgedAny ? 'patchwork_shingle' : 'exact_winnow',
+          });
+        }
       }
     } else {
       idx++;
     }
   }
 
-  // Compute Winnowing fingerprint overlap count
-  const docFp = computeWinnowFingerprints(docText);
-  const srcFpSet = new Set(computeWinnowFingerprints(source.text).map((f) => f.hash));
+  if (spans.length === 0) {
+    return { spans: [], winnowOverlap: 0, jaccard: 0 };
+  }
+
+  // Compute Winnowing fingerprint overlap count using precomputed document fingerprints
+  const docFp = precomputedDocFp ?? computeWinnowFingerprints(docText);
   const winnowOverlap = docFp.filter((f) => srcFpSet.has(f.hash)).length;
 
-  // Compute MinHash Jaccard
-  const sigDoc = computeMinHashSignature(docTokens);
-  const sigSrc = computeMinHashSignature(srcTokens);
+  // Compute MinHash Jaccard using precomputed document signature
+  const sigDoc = precomputedSigDoc ?? computeMinHashSignature(docTokens);
   const jaccard = estimateMinHashJaccard(sigDoc, sigSrc);
 
   return { spans, winnowOverlap, jaccard };
@@ -641,7 +849,7 @@ export function evaluateStylometry(text: string): StylometricReport {
   const stdDev = Math.sqrt(variance);
   const burstinessScore = meanLen > 0 ? Number(Math.min(0.62, stdDev / meanLen).toFixed(3)) : 0;
 
-  // Moving-Average Type-Token Ratio (MATTR) with window W = 50
+  // Moving-Average Type-Token Ratio (MATTR) with window W = 50 in O(N) sliding window
   const allWords = bodyText.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
   const W = 50;
   let mattr50 = 0;
@@ -650,11 +858,21 @@ export function evaluateStylometry(text: string): StylometricReport {
   } else if (allWords.length <= W) {
     mattr50 = new Set(allWords).size / allWords.length;
   } else {
-    let sumTtr = 0;
+    const freq = new Map<string, number>();
+    for (let i = 0; i < W; i++) {
+      freq.set(allWords[i], (freq.get(allWords[i]) || 0) + 1);
+    }
+    let sumTtr = freq.size / W;
     const windows = allWords.length - W + 1;
-    for (let i = 0; i < windows; i++) {
-      const slice = allWords.slice(i, i + W);
-      sumTtr += new Set(slice).size / W;
+    for (let i = 1; i < windows; i++) {
+      const outW = allWords[i - 1];
+      const outC = (freq.get(outW) || 1) - 1;
+      if (outC <= 0) freq.delete(outW);
+      else freq.set(outW, outC);
+
+      const inW = allWords[i + W - 1];
+      freq.set(inW, (freq.get(inW) || 0) + 1);
+      sumTtr += freq.size / W;
     }
     mattr50 = sumTtr / windows;
   }
@@ -785,8 +1003,8 @@ export function evaluateStylometry(text: string): StylometricReport {
     qualifyingAiWords < 300
       ? '--'
       : roundedAi >= 1 && roundedAi < 20
-      ? '*%'
-      : `${roundedAi}%`;
+        ? '*%'
+        : `${roundedAi}%`;
 
   let verdictLabel = 'Authentic Human Cadence';
   let verdictSummary =
@@ -923,6 +1141,7 @@ export function runManuscriptAudit(
   const cleanText = text || '';
   const docTokens = tokenizeManuscript(cleanText);
   const fingerprints = computeWinnowFingerprints(cleanText);
+  const sigDoc = computeMinHashSignature(docTokens);
   const excludedIdSet = new Set(excludedSourceIds);
 
   // Deduplicate combined corpus by id while preserving custom/live sources
@@ -954,23 +1173,41 @@ export function runManuscriptAudit(
   const rawMatches: Array<{
     source: CorpusSource;
     spans: MatchSpan[];
+    uniqueActiveIndices: Set<number>;
     activeWordCount: number;
     winnowOverlap: number;
     jaccard: number;
   }> = [];
 
+  const rawMatchedWordSet = new Set<number>();
   const minPctThreshold = exclusions.minPercentMatch ?? 0;
+
+  const docTrigrams: string[] = [];
+  for (let i = 0; i <= docTokens.length - 3; i++) {
+    docTrigrams.push(`${docTokens[i].word} ${docTokens[i + 1].word} ${docTokens[i + 2].word}`);
+  }
+  const docBigrams: string[] = [];
+  for (let i = 0; i <= docTokens.length - 2; i++) {
+    docBigrams.push(`${docTokens[i].word} ${docTokens[i + 1].word}`);
+  }
 
   for (const source of combinedCorpus) {
     const { spans, winnowOverlap, jaccard } = alignSourceSpans(
       cleanText,
       docTokens,
       source,
-      exclusions
+      exclusions,
+      fingerprints,
+      sigDoc,
+      docTrigrams,
+      docBigrams
     );
     if (spans.length > 0) {
       const uniqueActiveIndices = new Set<number>();
       for (const sp of spans) {
+        for (let w = sp.startWordIdx; w <= sp.endWordIdx; w++) {
+          rawMatchedWordSet.add(w);
+        }
         if (sp.excluded) continue;
         for (let w = sp.startWordIdx; w <= sp.endWordIdx; w++) {
           const tok = docTokens[w];
@@ -987,6 +1224,7 @@ export function runManuscriptAudit(
         rawMatches.push({
           source,
           spans,
+          uniqueActiveIndices,
           activeWordCount,
           winnowOverlap,
           jaccard,
@@ -995,16 +1233,42 @@ export function runManuscriptAudit(
     }
   }
 
-  // Sort matched sources by active matched word count descending (Turnitin Match Overview order)
-  rawMatches.sort((a, b) => {
-    if (b.activeWordCount !== a.activeWordCount) {
-      return b.activeWordCount - a.activeWordCount;
+  // Greedy Maximum Set-Cover Primary Source ordering (Turnitin Match Overview primary attribution rule)
+  const orderedMatches: typeof rawMatches = [];
+  const remainingMatches = [...rawMatches];
+  const greedyCoveredSet = new Set<number>();
+
+  while (remainingMatches.length > 0) {
+    let bestIdx = 0;
+    let bestGain = -1;
+    for (let i = 0; i < remainingMatches.length; i++) {
+      const cand = remainingMatches[i];
+      let gain = 0;
+      for (const w of cand.uniqueActiveIndices) {
+        if (!greedyCoveredSet.has(w)) gain++;
+      }
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestIdx = i;
+      } else if (gain === bestGain) {
+        const bestCand = remainingMatches[bestIdx];
+        if (
+          cand.activeWordCount > bestCand.activeWordCount ||
+          (cand.activeWordCount === bestCand.activeWordCount &&
+            (cand.spans.length > bestCand.spans.length ||
+              (cand.spans.length === bestCand.spans.length &&
+                cand.winnowOverlap > bestCand.winnowOverlap)))
+        ) {
+          bestIdx = i;
+        }
+      }
     }
-    if (b.spans.length !== a.spans.length) {
-      return b.spans.length - a.spans.length;
+    const chosen = remainingMatches.splice(bestIdx, 1)[0];
+    for (const w of chosen.uniqueActiveIndices) {
+      greedyCoveredSet.add(w);
     }
-    return b.winnowOverlap - a.winnowOverlap;
-  });
+    orderedMatches.push(chosen);
+  }
 
   // Assign 1-based rank, colorIndex (1..6), and non-overlapping Primary Source Attribution (like Turnitin Match Overview)
   const sources: MatchedSourceSummary[] = [];
@@ -1013,12 +1277,11 @@ export function runManuscriptAudit(
 
   const matchedWordSet = new Set<number>();
   const primaryAttributedWordSet = new Set<number>();
-  const rawMatchedWordSet = new Set<number>();
   const internetWordSet = new Set<number>();
   const pubWordSet = new Set<number>();
   const studentWordSet = new Set<number>();
 
-  rawMatches.forEach((item, index) => {
+  orderedMatches.forEach((item, index) => {
     const rank = index + 1;
     const colorIndex = (index % 6) + 1;
     const rankedSpans = item.spans.map((s) => ({
