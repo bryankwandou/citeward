@@ -1,0 +1,16 @@
+{
+  "version": "2.2",
+  "generatedAt": "2026-11-24T11:34:04.612Z",
+  "totalReferences": 2500,
+  "categories": {
+    "publications": 1537,
+    "internet": 169,
+    "student_papers": 794
+  },
+  "repositoriesCount": 30,
+  "rawBytes": 2351490,
+  "gzipBytes": 787149,
+  "compressionRatioPercent": 66.5,
+  "cdnPath": "/datasets/global-corpus-2500.min.json.gz",
+  "githubRawMirror": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/global-corpus-2500.min.json.gz"
+}

@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createDocxBuffer, parseDocumentBuffer } from '@/lib/document-parser';
 import { SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
-import { runManuscriptAudit } from '@/lib/similarity-engine';
-import { fetchLiveCandidateSourcesDetailed } from '@/lib/live-sources';
-import {
-  analyzeAiTells,
-  scanDocumentManipulations,
-} from '@/lib/forensics-and-ecosystem';
+
+export const maxDuration = 5;
 
 const ALLOWED_EXTENSIONS = new Set([
   'pdf',
@@ -104,36 +100,10 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const mode = req.nextUrl.searchParams.get('mode');
-      if (mode === 'reference') {
-        return NextResponse.json({
-          ok: true,
-          parsed,
-        });
-      }
-
-      const liveResult = await fetchLiveCandidateSourcesDetailed(parsed.text);
-      const liveSources = liveResult.sources;
-      const audit = runManuscriptAudit(
-        parsed.text,
-        {
-          excludeQuotes: true,
-          excludeBibliography: true,
-          minWordMatch: 8,
-          minPercentMatch: 0,
-        },
-        liveSources
-      );
-      const manip = scanDocumentManipulations(parsed.text);
-      const tells = analyzeAiTells(manip.sanitizedText);
-
+      // Return parsed text immediately (0 redundant server-side audit/API CPU; browser runs full 2,500-ref audit locally)
       return NextResponse.json({
         ok: true,
         parsed,
-        liveSources,
-        liveSourceStats: liveResult.stats,
-        audit,
-        forensics: { manip, tells },
       });
     }
 
@@ -203,19 +173,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const audit = runManuscriptAudit(parsed.text, {
-      excludeQuotes: true,
-      excludeBibliography: true,
-      minWordMatch: 8,
-    });
-    const manip = scanDocumentManipulations(parsed.text);
-    const tells = analyzeAiTells(manip.sanitizedText);
-
     return NextResponse.json({
       ok: true,
       parsed,
-      audit,
-      forensics: { manip, tells },
     });
   } catch (err) {
     return NextResponse.json(

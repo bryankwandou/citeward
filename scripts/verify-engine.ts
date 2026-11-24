@@ -1,9 +1,12 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import zlib from 'node:zlib';
 import {
   GLOBAL_TURNITIN_CORPUS_200,
   GLOBAL_TURNITIN_CORPUS_500,
   SAMPLE_MANUSCRIPTS,
 } from '../src/lib/corpus';
+import { unpackCloudCorpus } from '../src/lib/cloud-corpus-loader';
 import { runHeadToHead20BenchmarkSuite } from '../src/lib/head-to-head-benchmark';
 import {
   extractBibliographyQueries,
@@ -367,6 +370,35 @@ async function main() {
   );
   console.log(
     `[PASS] 20 Samples x 500 Global Refs & 100-Page Skripsi (${h2h.skripsi100PagesWordCount}w): Legacy v1.4 MAE=${h2h.legacyV14MeanAbsoluteError}% (${h2h.legacyV14ExactPassCount}/20) -> Calibrated v2.0 MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20).`
+  );
+
+  // Verify Gzip-Compressed 2,500-Reference Cloud Dataset & O(L_doc) Inverted Index Parity
+  const cloudGzPath = path.join(
+    process.cwd(),
+    'public',
+    'datasets',
+    'global-corpus-2500.min.json.gz'
+  );
+  const gzBuf = fs.readFileSync(cloudGzPath);
+  const packedCloud = JSON.parse(zlib.gunzipSync(gzBuf).toString('utf8'));
+  const cloud2500 = unpackCloudCorpus(packedCloud);
+  assert(
+    cloud2500.length === 2500,
+    `Expected 2,500 unpacked cloud references, got ${cloud2500.length}`
+  );
+  const tCloudStart = Date.now();
+  const audit2500 = runManuscriptAudit(
+    SAMPLE_MANUSCRIPTS[0].text,
+    { excludeQuotes: true, excludeBibliography: true, minWordMatch: 8 },
+    cloud2500
+  );
+  const cloudMs = Date.now() - tCloudStart;
+  assert(
+    audit2500.overallSimilarityPercent === 41.8,
+    `Expected 41.8% parity against 2,500 cloud references, got ${audit2500.overallSimilarityPercent}%`
+  );
+  console.log(
+    `[PASS] 2,500-Reference Cloud Dataset (${(gzBuf.length / 1024).toFixed(1)} KB gzipped) & Inverted Index Audit verified (${audit2500.overallSimilarityPercent}% exact, ${cloudMs}ms first-index).`
   );
 }
 

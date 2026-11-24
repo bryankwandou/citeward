@@ -18,6 +18,11 @@ import {
 } from 'lucide-react';
 import { CorpusSource, SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
 import { getHeadToHead20Samples } from '@/lib/head-to-head-benchmark';
+import { loadCloudCorpus2500 } from '@/lib/cloud-corpus-loader';
+import {
+  fetchLiveSourcesDirectlyFromBrowser,
+  parseDocumentInBrowser,
+} from '@/lib/browser-document-parser';
 import { generateAuditPdfBlob } from '@/lib/pdf-report';
 import {
   ExclusionOptions,
@@ -143,6 +148,7 @@ export function FeedbackStudio() {
   const [showCustomForm, setShowCustomForm] = useState<boolean>(false);
   const [uploadingRefDoc, setUploadingRefDoc] = useState<boolean>(false);
 
+  const [cloudSources, setCloudSources] = useState<CorpusSource[]>([]);
   const [extraFetchedSources, setExtraFetchedSources] = useState<CorpusSource[]>([]);
   const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
   const [scanningWeb, setScanningWeb] = useState<boolean>(false);
@@ -199,15 +205,28 @@ export function FeedbackStudio() {
     } catch { }
   }, [allCalibrationSamples]);
 
-  // Deterministic set-union Turnitin audit
+  // Hydrate 2,500-reference gzipped cloud corpus directly from static CDN / GitHub Raw (0ms Vercel CPU)
+  useEffect(() => {
+    let active = true;
+    loadCloudCorpus2500()
+      .then((loaded) => {
+        if (active && loaded.length > 0) setCloudSources(loaded);
+      })
+      .catch(() => { });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Deterministic set-union Turnitin audit (runs 100% in browser via O(L_doc) Inverted Index)
   const audit: IntegrityAuditResult = useMemo(() => {
     return runManuscriptAudit(
       text,
       exclusions,
-      [...customSources, ...extraFetchedSources],
+      [...cloudSources, ...customSources, ...extraFetchedSources],
       excludedSourceIds
     );
-  }, [text, exclusions, customSources, extraFetchedSources, excludedSourceIds]);
+  }, [text, exclusions, cloudSources, customSources, extraFetchedSources, excludedSourceIds]);
 
   const bandStyle = getTurnitinBandStyle(audit.overallSimilarityPercent);
   const manipFlags = useMemo(() => scanDocumentManipulations(text), [text]);
@@ -296,6 +315,22 @@ export function FeedbackStudio() {
       else setScanningWeb(true);
 
       try {
+        // Zero-Vercel-CPU fast path: query CORS-open global scholarly APIs directly from browser first
+        if (!withVoiceCritique) {
+          const direct = await fetchLiveSourcesDirectlyFromBrowser(text);
+          if (direct.sources.length > 0) {
+            setExtraFetchedSources(direct.sources);
+            setLiveStats({
+              totalFetched: direct.sources.length,
+              apisSucceeded: direct.apisSucceeded,
+              doisResolved: direct.doisResolved,
+              urlsResolved: 0,
+            });
+            return;
+          }
+        }
+
+        // Fallback to lightweight serverless endpoint (sourcesOnly skips server-side audit CPU)
         const res = await fetch('/api/inspect', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -306,6 +341,7 @@ export function FeedbackStudio() {
             customSources,
             includeLiveWeb: true,
             runDeepVoiceAudit: withVoiceCritique,
+            sourcesOnly: !withVoiceCritique,
           }),
         });
         const data = await res.json();
@@ -350,88 +386,101 @@ export function FeedbackStudio() {
     setUploadingDoc(true);
     setUploadError(null);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      // 1. Parse .PDF, .DOCX, .ODT, .RTF, .HTML, .TXT, .MD directly inside the browser (0.000 ms Vercel CPU!)
+      let parsed: {
+        fileName: string;
+        fileType: string;
+        byteSize: number;
+        extractedTitle: string;
+        text: string;
+        wordCount: number;
+        estimatedPages: number;
+        warnings?: string[];
+      } | null = null;
 
-      const res = await fetch('/api/parse-document', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
+      try {
+        const localParsed = await parseDocumentInBrowser(file);
+        if (localParsed.text.trim()) {
+          parsed = localParsed;
+        }
+      } catch {
+        // Fall through to lightweight server parser fallback
+      }
 
-      if (!res.ok || !data?.ok || !data?.parsed?.text) {
-        throw new Error(
-          data?.error || 'Could not extract readable text from the uploaded file.'
-        );
+      // 2. Fallback to lightweight serverless parser ONLY if browser extraction yielded empty text
+      if (!parsed || !parsed.text.trim()) {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/parse-document?mode=reference', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok || !data?.ok || !data?.parsed?.text) {
+          throw new Error(
+            data?.error || 'Could not extract readable text from the uploaded file.'
+          );
+        }
+        parsed = data.parsed;
+      }
+
+      if (!parsed || !parsed.text.trim()) {
+        throw new Error('Could not extract readable text from the uploaded file.');
       }
 
       const newId = `upload-${Date.now()}`;
-      const newTitle = data.parsed.extractedTitle || file.name.replace(/\.[^.]+$/, '');
-      const newAuthor = `Uploaded ${String(data.parsed.fileType).toUpperCase()} File`;
+      const newTitle = parsed.extractedTitle || file.name.replace(/\.[^.]+$/, '');
+      const newAuthor = `Uploaded ${String(parsed.fileType).toUpperCase()} File`;
       setSelectedSampleId(newId);
       setTitle(newTitle);
       setAuthor(newAuthor);
-      setText(data.parsed.text);
+      setText(parsed.text);
       setExcludedSourceIds([]);
       setSelectedSourceRank(null);
+      setExtraFetchedSources([]);
+      setLiveStats(null);
 
-      const incomingLive = Array.isArray(data.liveSources) ? data.liveSources : [];
-      setExtraFetchedSources(incomingLive);
-      if (data.liveSourceStats) setLiveStats(data.liveSourceStats);
+      // Compute quick client-side audit for Inbox row (0ms Vercel CPU)
+      const quickAudit = runManuscriptAudit(
+        parsed.text,
+        {
+          excludeQuotes: true,
+          excludeBibliography: true,
+          minWordMatch: 8,
+          minPercentMatch: 0,
+        },
+        cloudSources
+      );
 
-      if (data.audit) {
-        setUploadedInboxItems((prev) => [
-          {
-            id: newId,
-            paperId: `CW-${Math.floor(2000 + (Date.now() % 7999))}`,
-            title: newTitle,
-            author: newAuthor,
-            course: `Uploaded ${String(data.parsed.fileType).toUpperCase()}`,
-            text: data.parsed.text,
-            simPct: data.audit.overallSimilarityPercent,
-            aiPct: data.audit.stylometry.overallAiPercent,
-            words: data.parsed.wordCount,
-          },
-          ...prev,
-        ]);
-      }
+      setUploadedInboxItems((prev) => [
+        {
+          id: newId,
+          paperId: `CW-${Math.floor(2000 + (Date.now() % 7999))}`,
+          title: newTitle,
+          author: newAuthor,
+          course: `Uploaded ${String(parsed.fileType).toUpperCase()}`,
+          text: parsed.text,
+          simPct: quickAudit.overallSimilarityPercent,
+          aiPct: quickAudit.stylometry.overallAiPercent,
+          words: parsed.wordCount,
+        },
+        ...prev,
+      ]);
 
       setUploadMeta({
-        fileName: data.parsed.fileName,
-        fileType: String(data.parsed.fileType).toUpperCase(),
-        byteSize: data.parsed.byteSize,
-        estimatedPages: data.parsed.estimatedPages,
-        wordCount: data.parsed.wordCount,
+        fileName: parsed.fileName,
+        fileType: String(parsed.fileType).toUpperCase(),
+        byteSize: parsed.byteSize,
+        estimatedPages: parsed.estimatedPages,
+        wordCount: parsed.wordCount,
       });
       setViewerLayer('similarity');
     } catch (err) {
-      const lower = file.name.toLowerCase();
-      if (
-        lower.endsWith('.txt') ||
-        lower.endsWith('.md') ||
-        lower.endsWith('.tex') ||
-        lower.endsWith('.csv')
-      ) {
-        const rawContent = await file.text();
-        setSelectedSampleId('custom-upload');
-        setTitle(file.name.replace(/\.[^.]+$/, ''));
-        setAuthor('Uploaded Draft');
-        setText(rawContent.slice(0, 120000));
-        setUploadMeta({
-          fileName: file.name,
-          fileType: 'TXT',
-          byteSize: file.size,
-          estimatedPages: Math.max(1, Math.ceil(rawContent.split(/\s+/).length / 280)),
-          wordCount: rawContent.split(/\s+/).filter(Boolean).length,
-        });
-        setViewerLayer('similarity');
-      } else {
-        setUploadError(
-          err instanceof Error
-            ? err.message
-            : 'Failed to parse uploaded document.'
-        );
-      }
+      setUploadError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to parse uploaded document.'
+      );
     } finally {
       setUploadingDoc(false);
     }
@@ -660,8 +709,8 @@ export function FeedbackStudio() {
         {/* Clean Single-Row Studio Control Strip */}
         <div
           className={`rounded-[10px] border p-3.5 transition-colors bg-[var(--cw-raised)] shadow-[var(--cw-e1)] flex flex-wrap items-center justify-between gap-3 ${isDragOver
-              ? 'border-2 border-dashed border-[var(--cw-signal)] bg-[var(--cw-signal-wash)]'
-              : 'border-[var(--cw-rule-2)]'
+            ? 'border-2 border-dashed border-[var(--cw-signal)] bg-[var(--cw-signal-wash)]'
+            : 'border-[var(--cw-rule-2)]'
             }`}
         >
           <div className="flex flex-wrap items-center gap-2.5">
@@ -704,8 +753,8 @@ export function FeedbackStudio() {
               type="button"
               onClick={() => setShowInboxTable((prev) => !prev)}
               className={`cw-btn-ghost text-xs !py-2 !px-3 ${showInboxTable
-                  ? '!border-[var(--cw-signal)] !bg-[var(--cw-signal-wash)]'
-                  : ''
+                ? '!border-[var(--cw-signal)] !bg-[var(--cw-signal-wash)]'
+                : ''
                 }`}
             >
               <Inbox className="w-3.5 h-3.5" />
@@ -714,6 +763,11 @@ export function FeedbackStudio() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {cloudSources.length > 0 && (
+              <span className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-corpus-wash)] text-[var(--cw-corpus-ink)] font-semibold">
+                {cloudSources.length.toLocaleString()} Cloud Refs (0ms Server CPU)
+              </span>
+            )}
             {liveStats && liveStats.totalFetched > 0 && (
               <span className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-good-wash)] text-[var(--cw-good)] font-semibold">
                 {liveStats.totalFetched} live sources ({liveStats.apisSucceeded.length} APIs)
@@ -899,8 +953,8 @@ export function FeedbackStudio() {
                     setActiveTab('sources');
                   }}
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${viewerLayer === 'similarity'
-                      ? 'bg-[var(--cw-signal)] text-white font-semibold'
-                      : 'text-[var(--cw-ink-2)]'
+                    ? 'bg-[var(--cw-signal)] text-white font-semibold'
+                    : 'text-[var(--cw-ink-2)]'
                     }`}
                 >
                   <Eye className="w-3.5 h-3.5" />
@@ -913,8 +967,8 @@ export function FeedbackStudio() {
                     setActiveTab('ai');
                   }}
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${viewerLayer === 'ai'
-                      ? 'bg-[var(--cw-signal)] text-white font-semibold'
-                      : 'text-[var(--cw-ink-2)]'
+                    ? 'bg-[var(--cw-signal)] text-white font-semibold'
+                    : 'text-[var(--cw-ink-2)]'
                     }`}
                 >
                   <Sparkles className="w-3.5 h-3.5" />
@@ -924,8 +978,8 @@ export function FeedbackStudio() {
                   type="button"
                   onClick={() => setViewerLayer('edit')}
                   className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-[3px] cursor-pointer ${viewerLayer === 'edit'
-                      ? 'bg-[var(--cw-signal)] text-white font-semibold'
-                      : 'text-[var(--cw-ink-2)]'
+                    ? 'bg-[var(--cw-signal)] text-white font-semibold'
+                    : 'text-[var(--cw-ink-2)]'
                     }`}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
@@ -1040,8 +1094,8 @@ export function FeedbackStudio() {
                   setActiveTab('sources');
                 }}
                 className={`cw-lift text-left p-3 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'sources' || activeTab === 'filters'
-                    ? 'border-[var(--cw-corpus)]'
-                    : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
+                  ? 'border-[var(--cw-corpus)]'
+                  : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
                   }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -1064,10 +1118,10 @@ export function FeedbackStudio() {
                         audit.roundedSimilarityPercent === 0
                           ? '#1939B7'
                           : audit.roundedSimilarityPercent < 25
-                          ? '#116B3F'
-                          : audit.roundedSimilarityPercent < 50
-                          ? '#9E6E00'
-                          : '#B3261E'
+                            ? '#116B3F'
+                            : audit.roundedSimilarityPercent < 50
+                              ? '#9E6E00'
+                              : '#B3261E'
                       }
                       strokeWidth="4"
                       strokeLinecap="round"
@@ -1091,8 +1145,8 @@ export function FeedbackStudio() {
                   setActiveTab('ai');
                 }}
                 className={`cw-lift text-left p-3 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'ai'
-                    ? 'border-[var(--cw-stylo)]'
-                    : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
+                  ? 'border-[var(--cw-stylo)]'
+                  : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
                   }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -1115,8 +1169,8 @@ export function FeedbackStudio() {
                         audit.stylometry.overallAiPercent >= 60
                           ? '#A80C60'
                           : audit.stylometry.overallAiPercent >= 25
-                          ? '#027A94'
-                          : '#116B3F'
+                            ? '#027A94'
+                            : '#116B3F'
                       }
                       strokeWidth="4"
                       strokeLinecap="round"
@@ -1146,8 +1200,8 @@ export function FeedbackStudio() {
                 aria-selected={activeTab === 'sources'}
                 onClick={() => setActiveTab('sources')}
                 className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${activeTab === 'sources'
-                    ? 'border-[#B3261E] text-[#B3261E] bg-[var(--cw-raised)]'
-                    : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
+                  ? 'border-[#B3261E] text-[#B3261E] bg-[var(--cw-raised)]'
+                  : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
                   }`}
               >
                 Sources ({audit.sources.length})
@@ -1158,8 +1212,8 @@ export function FeedbackStudio() {
                 aria-selected={activeTab === 'filters'}
                 onClick={() => setActiveTab('filters')}
                 className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${activeTab === 'filters'
-                    ? 'border-[#B3261E] text-[#B3261E] bg-[var(--cw-raised)]'
-                    : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
+                  ? 'border-[#B3261E] text-[#B3261E] bg-[var(--cw-raised)]'
+                  : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
                   }`}
               >
                 Filters &amp; Math
@@ -1170,8 +1224,8 @@ export function FeedbackStudio() {
                 aria-selected={activeTab === 'ai'}
                 onClick={() => setActiveTab('ai')}
                 className={`py-2.5 px-2 border-b-2 cursor-pointer transition-colors ${activeTab === 'ai'
-                    ? 'border-[var(--cw-corpus)] text-[var(--cw-corpus-ink)] bg-[var(--cw-raised)]'
-                    : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
+                  ? 'border-[var(--cw-corpus)] text-[var(--cw-corpus-ink)] bg-[var(--cw-raised)]'
+                  : 'border-transparent text-[var(--cw-ink-3)] hover:text-[var(--cw-ink)]'
                   }`}
               >
                 AI Report
@@ -1212,8 +1266,8 @@ export function FeedbackStudio() {
                       type="button"
                       onClick={() => setSourceViewMode('primary')}
                       className={`px-2 py-0.5 rounded-[3px] cursor-pointer ${sourceViewMode === 'primary'
-                          ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold'
-                          : 'text-[var(--cw-ink-3)]'
+                        ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold'
+                        : 'text-[var(--cw-ink-3)]'
                         }`}
                     >
                       Primary Sources
@@ -1222,8 +1276,8 @@ export function FeedbackStudio() {
                       type="button"
                       onClick={() => setSourceViewMode('all')}
                       className={`px-2 py-0.5 rounded-[3px] cursor-pointer ${sourceViewMode === 'all'
-                          ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold'
-                          : 'text-[var(--cw-ink-3)]'
+                        ? 'bg-[var(--cw-raised)] text-[var(--cw-ink)] font-semibold'
+                        : 'text-[var(--cw-ink-3)]'
                         }`}
                     >
                       All Sources
@@ -1330,8 +1384,8 @@ export function FeedbackStudio() {
                         <div
                           key={item.source.id}
                           className={`rounded-[8px] border transition-colors ${expanded
-                              ? 'border-[var(--cw-signal)] bg-[var(--cw-sunken)]'
-                              : 'border-[var(--cw-rule)] bg-[var(--cw-paper)]'
+                            ? 'border-[var(--cw-signal)] bg-[var(--cw-sunken)]'
+                            : 'border-[var(--cw-rule)] bg-[var(--cw-paper)]'
                             }`}
                         >
                           <button
@@ -1574,8 +1628,8 @@ export function FeedbackStudio() {
                 {/* Turnitin Document Integrity Flags */}
                 <div
                   className={`p-3 rounded-[8px] border cw-mono text-[11px] flex items-center justify-between ${manipFlags.homoglyphCount > 0 || manipFlags.zeroWidthCount > 0
-                      ? 'border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] font-semibold'
-                      : 'border-[var(--cw-rule)] bg-[var(--cw-paper)] text-[var(--cw-ink-2)]'
+                    ? 'border-[var(--cw-bad)] bg-[var(--cw-bad-wash)] text-[var(--cw-bad)] font-semibold'
+                    : 'border-[var(--cw-rule)] bg-[var(--cw-paper)] text-[var(--cw-ink-2)]'
                     }`}
                 >
                   <span>Character Flags (Replaced / Hidden):</span>

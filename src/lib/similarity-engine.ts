@@ -75,10 +75,10 @@ export interface StylometricForensicSignals {
   narrativeBeatCount: number; // repetitive dialogue/action beats detected
   macroChunkStability: number; // 0..100 uniformity across 300-word windows
   detectedProfile:
-    | 'academic_synthetic'
-    | 'narrative_staccato_ai'
-    | 'hybrid_ai'
-    | 'human_empirical';
+  | 'academic_synthetic'
+  | 'narrative_staccato_ai'
+  | 'hybrid_ai'
+  | 'human_empirical';
 }
 
 export interface StylometricReport {
@@ -416,14 +416,21 @@ interface CachedSourceIndex {
   srcShingleSet: Set<string>;
   srcTrigramPos: Map<string, number[]>;
   srcBigramPos: Map<string, number[]>;
-  srcFpSet: Set<number>;
-  sigSrc: Uint32Array;
+  srcFpSet?: Set<number>;
+  sigSrc?: Uint32Array;
 }
 
 const SOURCE_INDEX_CACHE = new Map<string, CachedSourceIndex>();
+const INVERTED_INDEXED_KEYS = new Set<string>();
+const GLOBAL_TRIGRAM_TO_SOURCE_KEYS = new Map<string, string[]>();
+const GLOBAL_BIGRAM_TO_SOURCE_KEYS = new Map<string, string[]>();
+
+function getSourceCacheKey(source: CorpusSource): string {
+  return `${source.id}::${source.text.length}`;
+}
 
 function getSourceIndex(source: CorpusSource): CachedSourceIndex {
-  const cacheKey = `${source.id}::${source.text.length}`;
+  const cacheKey = getSourceCacheKey(source);
   const cached = SOURCE_INDEX_CACHE.get(cacheKey);
   if (cached) return cached;
 
@@ -453,18 +460,29 @@ function getSourceIndex(source: CorpusSource): CachedSourceIndex {
     else srcBigramPos.set(k2, [i]);
   }
 
-  const srcFpSet = new Set(computeWinnowFingerprints(source.text).map((f) => f.hash));
-  const sigSrc = computeMinHashSignature(srcTokens);
-
   const built: CachedSourceIndex = {
     srcTokens,
     srcShingleSet,
     srcTrigramPos,
     srcBigramPos,
-    srcFpSet,
-    sigSrc,
   };
   SOURCE_INDEX_CACHE.set(cacheKey, built);
+
+  // Register in global inverted trigram/bigram index once for O(L_doc) candidate filtering across 2,500+ sources
+  if (!INVERTED_INDEXED_KEYS.has(cacheKey)) {
+    INVERTED_INDEXED_KEYS.add(cacheKey);
+    for (const tri of srcShingleSet) {
+      const bucket = GLOBAL_TRIGRAM_TO_SOURCE_KEYS.get(tri);
+      if (bucket) bucket.push(cacheKey);
+      else GLOBAL_TRIGRAM_TO_SOURCE_KEYS.set(tri, [cacheKey]);
+    }
+    for (const bi of srcBigramPos.keys()) {
+      const bucket = GLOBAL_BIGRAM_TO_SOURCE_KEYS.get(bi);
+      if (bucket) bucket.push(cacheKey);
+      else GLOBAL_BIGRAM_TO_SOURCE_KEYS.set(bi, [cacheKey]);
+    }
+  }
+
   return built;
 }
 
@@ -484,7 +502,7 @@ function alignSourceSpans(
   precomputedDocBigrams?: string[]
 ): { spans: MatchSpan[]; winnowOverlap: number; jaccard: number } {
   const srcIdx = getSourceIndex(source);
-  const { srcTokens, srcShingleSet, srcTrigramPos, srcBigramPos, srcFpSet, sigSrc } = srcIdx;
+  const { srcTokens, srcShingleSet, srcTrigramPos, srcBigramPos } = srcIdx;
   if (docTokens.length < 3 || srcTokens.length < 3) {
     return { spans: [], winnowOverlap: 0, jaccard: 0 };
   }
@@ -725,13 +743,21 @@ function alignSourceSpans(
     return { spans: [], winnowOverlap: 0, jaccard: 0 };
   }
 
+  // Lazily compute Winnowing & MinHash only for the tiny set of sources with actual matched spans
+  if (!srcIdx.srcFpSet) {
+    srcIdx.srcFpSet = new Set(computeWinnowFingerprints(source.text).map((f) => f.hash));
+  }
+  if (!srcIdx.sigSrc) {
+    srcIdx.sigSrc = computeMinHashSignature(srcTokens);
+  }
+
   // Compute Winnowing fingerprint overlap count using precomputed document fingerprints
   const docFp = precomputedDocFp ?? computeWinnowFingerprints(docText);
-  const winnowOverlap = docFp.filter((f) => srcFpSet.has(f.hash)).length;
+  const winnowOverlap = docFp.filter((f) => srcIdx.srcFpSet!.has(f.hash)).length;
 
   // Compute MinHash Jaccard using precomputed document signature
   const sigDoc = precomputedSigDoc ?? computeMinHashSignature(docTokens);
-  const jaccard = estimateMinHashJaccard(sigDoc, sigSrc);
+  const jaccard = estimateMinHashJaccard(sigDoc, srcIdx.sigSrc);
 
   return { spans, winnowOverlap, jaccard };
 }
@@ -1013,13 +1039,13 @@ export function evaluateStylometry(text: string): StylometricReport {
         : 0;
   const lexicalEchoBoost =
     (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0) &&
-    ((mattr50 > 0 && mattr50 < 0.76) || lexicalEchoRatio >= 0.16)
+      ((mattr50 > 0 && mattr50 < 0.76) || lexicalEchoRatio >= 0.16)
       ? 14
       : 0;
   const macroLongPdfBoost =
     allWords.length >= 1500 &&
-    macroChunkStability >= 70 &&
-    (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0)
+      macroChunkStability >= 70 &&
+      (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0)
       ? 10
       : 0;
   const narrativeAiDocBoost =
@@ -1065,7 +1091,7 @@ export function evaluateStylometry(text: string): StylometricReport {
     const localVar =
       localLens.length > 1
         ? localLens.reduce((acc, l) => acc + Math.pow(l - localMean, 2), 0) /
-          localLens.length
+        localLens.length
         : 0;
     const localCv = localMean > 0 ? Math.sqrt(localVar) / localMean : burstinessScore;
     const effectiveCv = Math.min(burstinessScore, localCv);
@@ -1378,7 +1404,62 @@ export function runManuscriptAudit(
     docBigrams.push(`${docTokens[i].word} ${docTokens[i + 1].word}`);
   }
 
+  // Ensure every source in combinedCorpus is registered in the O(1) inverted index once,
+  // then pre-filter candidates in O(L_doc) instead of O(N_corpus * L_doc) so 2,500+ refs run in milliseconds
+  const activeKeyToSource = new Map<string, CorpusSource>();
   for (const source of combinedCorpus) {
+    const k = getSourceCacheKey(source);
+    if (!INVERTED_INDEXED_KEYS.has(k)) {
+      getSourceIndex(source);
+    }
+    activeKeyToSource.set(k, source);
+  }
+
+  const candidateKeySet = new Set<string>();
+  const seenDocTrigrams = new Set<string>();
+  for (let i = 0; i < docTrigrams.length; i++) {
+    const tri = docTrigrams[i];
+    if (seenDocTrigrams.has(tri)) continue;
+    seenDocTrigrams.add(tri);
+    const bucket = GLOBAL_TRIGRAM_TO_SOURCE_KEYS.get(tri);
+    if (bucket) {
+      for (let b = 0; b < bucket.length; b++) {
+        if (activeKeyToSource.has(bucket[b])) {
+          candidateKeySet.add(bucket[b]);
+        }
+      }
+    }
+  }
+
+  // Also include sources sharing >= 3 distinct document bigrams (for colinear 2-gram patchwriting without 3-gram seeds)
+  const bigramHitCounts = new Map<string, number>();
+  const seenDocBigrams = new Set<string>();
+  for (let i = 0; i < docBigrams.length; i++) {
+    const bi = docBigrams[i];
+    if (seenDocBigrams.has(bi)) continue;
+    seenDocBigrams.add(bi);
+    const bucket = GLOBAL_BIGRAM_TO_SOURCE_KEYS.get(bi);
+    if (bucket) {
+      for (let b = 0; b < bucket.length; b++) {
+        const sk = bucket[b];
+        if (candidateKeySet.has(sk) || !activeKeyToSource.has(sk)) continue;
+        const c = (bigramHitCounts.get(sk) || 0) + 1;
+        if (c >= 3) {
+          candidateKeySet.add(sk);
+        } else {
+          bigramHitCounts.set(sk, c);
+        }
+      }
+    }
+  }
+
+  const candidateSources: CorpusSource[] = [];
+  for (const sk of candidateKeySet) {
+    const src = activeKeyToSource.get(sk);
+    if (src) candidateSources.push(src);
+  }
+
+  for (const source of candidateSources) {
     const { spans, winnowOverlap, jaccard } = alignSourceSpans(
       cleanText,
       docTokens,

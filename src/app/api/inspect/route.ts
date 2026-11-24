@@ -4,8 +4,11 @@ import { CorpusSource } from '@/lib/corpus';
 import { fetchLiveCandidateSourcesDetailed } from '@/lib/live-sources';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
 
+export const maxDuration = 5;
+
 const InspectSchema = z.object({
   text: z.string().min(1, 'Manuscript text is required.').max(600000),
+  sourcesOnly: z.boolean().default(false),
   exclusions: z
     .object({
       excludeQuotes: z.boolean().default(false),
@@ -114,6 +117,7 @@ export async function POST(req: NextRequest) {
       customSources = [],
       includeLiveWeb,
       runDeepVoiceAudit,
+      sourcesOnly,
     } = parsed.data;
 
     let liveSources: CorpusSource[] = [];
@@ -127,6 +131,16 @@ export async function POST(req: NextRequest) {
       const detailed = await fetchLiveCandidateSourcesDetailed(text);
       liveSources = detailed.sources;
       liveSourceStats = detailed.stats;
+    }
+
+    // Ultra-low Vercel Active CPU mode: browser already computes full similarity & stylometry locally
+    if (sourcesOnly && !runDeepVoiceAudit) {
+      return NextResponse.json({
+        ok: true,
+        liveSourcesFetched: liveSources.length,
+        liveSources,
+        liveSourceStats,
+      });
     }
 
     const combinedExtra: CorpusSource[] = [...customSources, ...liveSources];

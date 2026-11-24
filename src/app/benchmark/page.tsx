@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -13,7 +13,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import benchmarkReportJson from '@/data/head-to-head-20-samples-report.json';
-import { GLOBAL_TURNITIN_CORPUS_500 } from '@/lib/corpus';
+import { CorpusSource, GLOBAL_TURNITIN_CORPUS_500 } from '@/lib/corpus';
+import { loadCloudCorpus2500 } from '@/lib/cloud-corpus-loader';
 import { HeadToHeadBenchmarkSuiteReport } from '@/lib/head-to-head-benchmark';
 import { SKRIPSI_100_METADATA } from '@/lib/skripsi-100-halaman';
 import { FingerprintConstellationCanvas } from '@/components/FingerprintConstellationCanvas';
@@ -76,27 +77,42 @@ export default function BenchmarkPage() {
     'all' | 'publications' | 'internet' | 'student_papers'
   >('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCorpus, setActiveCorpus] = useState<CorpusSource[]>(GLOBAL_TURNITIN_CORPUS_500);
+
+  useEffect(() => {
+    let mounted = true;
+    loadCloudCorpus2500()
+      .then((cloud) => {
+        if (mounted && cloud.length > GLOBAL_TURNITIN_CORPUS_500.length) {
+          setActiveCorpus(cloud);
+        }
+      })
+      .catch(() => { });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const corpusStats = useMemo(() => {
     let publications = 0;
     let internet = 0;
     let studentPapers = 0;
-    for (const s of GLOBAL_TURNITIN_CORPUS_500) {
+    for (const s of activeCorpus) {
       if (s.category === 'publications') publications++;
       else if (s.category === 'internet') internet++;
       else studentPapers++;
     }
     return {
-      total: GLOBAL_TURNITIN_CORPUS_500.length,
+      total: activeCorpus.length,
       publications,
       internet,
       studentPapers,
     };
-  }, []);
+  }, [activeCorpus]);
 
   const filteredCorpus = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return GLOBAL_TURNITIN_CORPUS_500.filter((item) => {
+    return activeCorpus.filter((item) => {
       if (channelFilter !== 'all' && item.category !== channelFilter) return false;
       if (!q) return true;
       return (
@@ -106,7 +122,7 @@ export default function BenchmarkPage() {
         (item.doi && item.doi.toLowerCase().includes(q))
       );
     });
-  }, [channelFilter, searchQuery]);
+  }, [activeCorpus, channelFilter, searchQuery]);
 
   return (
     <div className="cw-container py-8 space-y-8">
@@ -283,9 +299,8 @@ export default function BenchmarkPage() {
                     {row.legacyV14Excluded.toFixed(1)}%
                   </td>
                   <td
-                    className={`py-3 px-3 text-right cw-mono font-semibold ${
-                      row.legacyV14Delta > 0 ? 'text-[var(--cw-bad)]' : 'text-[var(--cw-ink-3)]'
-                    }`}
+                    className={`py-3 px-3 text-right cw-mono font-semibold ${row.legacyV14Delta > 0 ? 'text-[var(--cw-bad)]' : 'text-[var(--cw-ink-3)]'
+                      }`}
                   >
                     {row.legacyV14Delta.toFixed(1)}%
                   </td>
@@ -353,11 +368,10 @@ export default function BenchmarkPage() {
                 key={key}
                 type="button"
                 onClick={() => setChannelFilter(key)}
-                className={`cw-mono text-[11px] px-2.5 py-1.5 rounded-[5px] border cursor-pointer ${
-                  channelFilter === key
+                className={`cw-mono text-[11px] px-2.5 py-1.5 rounded-[5px] border cursor-pointer ${channelFilter === key
                     ? 'border-[var(--cw-signal)] bg-[var(--cw-signal-wash)] text-[var(--cw-signal)] font-semibold'
                     : 'border-[var(--cw-rule-2)] bg-[var(--cw-paper)] text-[var(--cw-ink-2)]'
-                }`}
+                  }`}
               >
                 {label}
               </button>
