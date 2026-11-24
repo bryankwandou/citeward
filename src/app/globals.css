@@ -642,6 +642,80 @@ body::before {
   animation: cw-pulse-ring 2.4s var(--cw-ease) infinite;
 }
 
+/* ── GPU-Composited Editorial Motion Choreography ───────────────────────── */
+@keyframes cw-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cw-scan-sweep {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.7;
+  }
+  80% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateX(220%);
+    opacity: 0;
+  }
+}
+
+.cw-reveal {
+  animation: cw-fade-rise 0.55s var(--cw-ease) both;
+}
+
+.cw-d1 { animation-delay: 60ms; }
+.cw-d2 { animation-delay: 120ms; }
+.cw-d3 { animation-delay: 180ms; }
+.cw-d4 { animation-delay: 240ms; }
+.cw-d5 { animation-delay: 300ms; }
+.cw-d6 { animation-delay: 360ms; }
+
+.cw-lift {
+  transition: transform 220ms var(--cw-ease), box-shadow 220ms var(--cw-ease), border-color 220ms var(--cw-ease);
+}
+
+.cw-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--cw-e3);
+  border-color: var(--cw-rule-2);
+}
+
+.cw-scan-line {
+  position: relative;
+  overflow: hidden;
+}
+
+.cw-scan-line::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgba(25, 57, 183, 0.12), transparent);
+  animation: cw-scan-sweep 3.2s var(--cw-ease) infinite;
+  pointer-events: none;
+}
+
+.cw-gauge-arc {
+  transition: stroke-dashoffset 680ms var(--cw-ease), stroke 320ms var(--cw-ease);
+}
+
+.cw-bar-fill {
+  transition: transform 620ms var(--cw-ease);
+  transform-origin: left center;
+}
+
 /* ── Reduced Motion Safety Net (Design Handbook Bab 8.12) ────────────────── */
 @media (prefers-reduced-motion: reduce) {
   html {

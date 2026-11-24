@@ -1,4 +1,8 @@
-import { GLOBAL_TURNITIN_CORPUS_200, SAMPLE_MANUSCRIPTS } from '../src/lib/corpus';
+import {
+  GLOBAL_TURNITIN_CORPUS_200,
+  GLOBAL_TURNITIN_CORPUS_500,
+  SAMPLE_MANUSCRIPTS,
+} from '../src/lib/corpus';
 import { runHeadToHead20BenchmarkSuite } from '../src/lib/head-to-head-benchmark';
 import {
   extractBibliographyQueries,
@@ -295,10 +299,10 @@ async function main() {
     `[PASS] Official Turnitin Integer (${baseAudit.roundedSimilarityPercent}%), Source-% Filter (${baseAudit.sources.length} -> ${pctFiltered.sources.length}), 0 Ghost Rows, AI <300w='--' & URL/Bib Extractors verified.`
   );
 
-  console.log('=== 8. Verifying 20-Sample Head-to-Head Suite, 100-Page Skripsi & 200-Reference Global Corpus ===');
+  console.log('=== 8. Verifying 20-Sample Head-to-Head Suite, 100-Page Skripsi & 500-Reference Global Corpus ===');
   assert(
-    GLOBAL_TURNITIN_CORPUS_200.length === 200,
-    `Expected exactly 200 global references, got ${GLOBAL_TURNITIN_CORPUS_200.length}`
+    GLOBAL_TURNITIN_CORPUS_200.length === 200 && GLOBAL_TURNITIN_CORPUS_500.length === 500,
+    `Expected 200/500 global references, got ${GLOBAL_TURNITIN_CORPUS_200.length}/${GLOBAL_TURNITIN_CORPUS_500.length}`
   );
   const h2h = runHeadToHead20BenchmarkSuite();
   assert(
@@ -314,7 +318,7 @@ async function main() {
     `Expected Calibrated v2.0 (${h2h.calibratedV20MeanAbsoluteError}%) to beat Legacy v1.4 (${h2h.legacyV14MeanAbsoluteError}%)`
   );
   console.log(
-    `[PASS] 20 Samples x 200 Global Refs & 100-Page Skripsi (${h2h.skripsi100PagesWordCount}w): Legacy v1.4 MAE=${h2h.legacyV14MeanAbsoluteError}% (${h2h.legacyV14ExactPassCount}/20) -> Calibrated v2.0 MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20).`
+    `[PASS] 20 Samples x 500 Global Refs & 100-Page Skripsi (${h2h.skripsi100PagesWordCount}w): Legacy v1.4 MAE=${h2h.legacyV14MeanAbsoluteError}% (${h2h.legacyV14ExactPassCount}/20) -> Calibrated v2.0 MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20).`
   );
 }
 

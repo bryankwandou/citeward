@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-22T17:32:21.438Z",
+  "generatedAt": "2026-11-24T05:50:32.261Z",
   "totalSamples": 20,
-  "totalCorpusReferences": 200,
+  "totalCorpusReferences": 500,
   "skripsi100PagesWordCount": 30595,
   "skripsi100PagesCount": 100,
   "legacyV14MeanAbsoluteError": 9.77,
@@ -32,7 +32,7 @@
       "matchedSourcesCount": 3,
       "topSourceTitle": "Winnowing: Local Algorithms for Document Fingerprinting",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 220
+      "runtimeMs": 945
     },
     {
       "sampleNumber": 2,
@@ -57,7 +57,7 @@
       "matchedSourcesCount": 0,
       "topSourceTitle": "None (0% Match)",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 16
+      "runtimeMs": 55
     },
     {
       "sampleNumber": 3,
@@ -82,7 +82,7 @@
       "matchedSourcesCount": 0,
       "topSourceTitle": "None (0% Match)",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 14
+      "runtimeMs": 49
     },
     {
       "sampleNumber": 4,
@@ -107,7 +107,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Attention Is All You Need",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 28
+      "runtimeMs": 91
     },
     {
       "sampleNumber": 5,
@@ -132,7 +132,7 @@
       "matchedSourcesCount": 3,
       "topSourceTitle": "Analisis Kemiripan Karya Ilmiah Menggunakan Metode Winnowing",
       "turnitinAiIndicator": "53%",
-      "runtimeMs": 65
+      "runtimeMs": 152
     },
     {
       "sampleNumber": 6,
@@ -157,7 +157,7 @@
       "matchedSourcesCount": 18,
       "topSourceTitle": "Winnowing: Local Algorithms for Document Fingerprinting",
       "turnitinAiIndicator": "49%",
-      "runtimeMs": 2819
+      "runtimeMs": 9716
     },
     {
       "sampleNumber": 7,
@@ -182,7 +182,7 @@
       "matchedSourcesCount": 2,
       "topSourceTitle": "Pengembangan Sistem Informasi Manajemen Akademik Berbasis Web Menggunakan Metode Waterfall",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 4
+      "runtimeMs": 21
     },
     {
       "sampleNumber": 8,
@@ -207,7 +207,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Introduction to Information Retrieval: Document Shingling and Near-Duplicate Detection",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 5
+      "runtimeMs": 51
     },
     {
       "sampleNumber": 9,
@@ -232,7 +232,7 @@
       "matchedSourcesCount": 0,
       "topSourceTitle": "None (0% Match)",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 5
+      "runtimeMs": 24
     },
     {
       "sampleNumber": 10,
@@ -257,7 +257,7 @@
       "matchedSourcesCount": 0,
       "topSourceTitle": "None (0% Match)",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 14
+      "runtimeMs": 34
     },
     {
       "sampleNumber": 11,
@@ -282,7 +282,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Prosedur Pengujian Beban Peladen dan Pemantauan Latensi Antarmuka Pemrograman Aplikasi",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 9
+      "runtimeMs": 32
     },
     {
       "sampleNumber": 12,
@@ -307,7 +307,7 @@
       "matchedSourcesCount": 0,
       "topSourceTitle": "None (0% Match)",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 27
+      "runtimeMs": 37
     },
     {
       "sampleNumber": 13,
@@ -332,7 +332,7 @@
       "matchedSourcesCount": 3,
       "topSourceTitle": "Pengembangan Sistem Informasi Manajemen Akademik Berbasis Web Menggunakan Metode Waterfall",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 9
+      "runtimeMs": 41
     },
     {
       "sampleNumber": 14,
@@ -357,7 +357,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Longitudinal Cohort Assessment of Micronutrient Supplementation and Hemoglobin Recovery",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 9
+      "runtimeMs": 20
     },
     {
       "sampleNumber": 15,
@@ -382,7 +382,7 @@
       "matchedSourcesCount": 2,
       "topSourceTitle": "Deterministic Latency Bounds for Asynchronous Quorum Replication in Edge Clusters",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 6
+      "runtimeMs": 22
     },
     {
       "sampleNumber": 16,
@@ -407,7 +407,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Klasifikasi Citra Radiografi Toraks Menggunakan Arsitektur Convolutional Neural Network",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 5
+      "runtimeMs": 30
     },
     {
       "sampleNumber": 17,
@@ -432,7 +432,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Analisis Pengaruh Literasi Keuangan Digital dan Modal Kerja terhadap Pertumbuhan UMKM",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 9
+      "runtimeMs": 16
     },
     {
       "sampleNumber": 18,
@@ -457,7 +457,7 @@
       "matchedSourcesCount": 1,
       "topSourceTitle": "Pedoman Analisis Validitas Pearson Product Moment dan Reliabilitas Cronbach Alpha pada Riset Terapan",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 11
+      "runtimeMs": 53
     },
     {
       "sampleNumber": 19,
@@ -482,7 +482,7 @@
       "matchedSourcesCount": 2,
       "topSourceTitle": "Implementasi Integritas Dokumen Akademik Berbasis Fungsi Hash Kriptografi SHA-256",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 10
+      "runtimeMs": 40
     },
     {
       "sampleNumber": 20,
@@ -507,7 +507,7 @@
       "matchedSourcesCount": 0,
       "topSourceTitle": "None (0% Match)",
       "turnitinAiIndicator": "--",
-      "runtimeMs": 9
+      "runtimeMs": 18
     }
   ]
 }

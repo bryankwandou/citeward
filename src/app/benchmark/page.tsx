@@ -13,7 +13,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import benchmarkReportJson from '@/data/head-to-head-20-samples-report.json';
-import { GLOBAL_TURNITIN_CORPUS_200 } from '@/lib/corpus';
+import { GLOBAL_TURNITIN_CORPUS_500 } from '@/lib/corpus';
 import { HeadToHeadBenchmarkSuiteReport } from '@/lib/head-to-head-benchmark';
 import { SKRIPSI_100_METADATA } from '@/lib/skripsi-100-halaman';
 
@@ -80,13 +80,13 @@ export default function BenchmarkPage() {
     let publications = 0;
     let internet = 0;
     let studentPapers = 0;
-    for (const s of GLOBAL_TURNITIN_CORPUS_200) {
+    for (const s of GLOBAL_TURNITIN_CORPUS_500) {
       if (s.category === 'publications') publications++;
       else if (s.category === 'internet') internet++;
       else studentPapers++;
     }
     return {
-      total: GLOBAL_TURNITIN_CORPUS_200.length,
+      total: GLOBAL_TURNITIN_CORPUS_500.length,
       publications,
       internet,
       studentPapers,
@@ -95,7 +95,7 @@ export default function BenchmarkPage() {
 
   const filteredCorpus = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return GLOBAL_TURNITIN_CORPUS_200.filter((item) => {
+    return GLOBAL_TURNITIN_CORPUS_500.filter((item) => {
       if (channelFilter !== 'all' && item.category !== channelFilter) return false;
       if (!q) return true;
       return (
@@ -116,7 +116,7 @@ export default function BenchmarkPage() {
             Head-to-Head Turnitin Calibration Lab
           </div>
           <h1 className="cw-display text-2xl md:text-3xl font-bold text-[var(--cw-ink)]">
-            20 Samples &times; 200 Global References &amp; 100-Page Skripsi Benchmark
+            20 Samples &times; {corpusStats.total} Global References &amp; 100-Page Skripsi Benchmark
           </h1>
           <p className="text-sm text-[var(--cw-ink-2)] leading-relaxed">
             Empirical head-to-head evaluation comparing Legacy v1.4 against Calibrated v2.0 across
@@ -318,12 +318,12 @@ export default function BenchmarkPage() {
             <div className="flex items-center gap-2">
               <Database className="w-4 h-4 text-[var(--cw-signal)]" />
               <h2 className="cw-display text-lg font-bold text-[var(--cw-ink)]">
-                200-Reference Global Corpus Stored in Repository
+                {corpusStats.total}-Reference Global Corpus Stored in Repository
               </h2>
             </div>
             <p className="text-xs text-[var(--cw-ink-3)]">
               Harvested from Crossref, DOAJ, PLOS, HAL Open Archive, DataCite, ACM/IEEE/arXiv,
-              Garuda/ETD, and Wikipedia EN/ID (`src/data/global-reference-corpus-200.json`).
+              Garuda/ETD, and Wikipedia EN/ID (src/data/global-reference-corpus-500.json).
             </p>
           </div>
 

@@ -1,6 +1,5 @@
 import {
-  CorpusSource,
-  GLOBAL_TURNITIN_CORPUS_200,
+  GLOBAL_TURNITIN_CORPUS_500,
   SAMPLE_MANUSCRIPTS,
 } from './corpus';
 import {
@@ -138,7 +137,7 @@ export function runLegacyV14Simulation(
 
   const legacyMatches: Array<{ activeWords: Set<number>; count: number }> = [];
 
-  for (const source of GLOBAL_TURNITIN_CORPUS_200) {
+  for (const source of GLOBAL_TURNITIN_CORPUS_500) {
     const fullSrc = `${source.authors} ${source.year} ${source.title} ${source.publication} ${source.text}`;
     const srcWords = fullSrc.toLowerCase().match(wordRegex) || [];
     if (docTokens.length < 3 || srcWords.length < 3) continue;
@@ -622,7 +621,7 @@ export function runHeadToHead20BenchmarkSuite(): HeadToHeadBenchmarkSuiteReport 
   return {
     generatedAt: new Date().toISOString(),
     totalSamples: samples.length,
-    totalCorpusReferences: GLOBAL_TURNITIN_CORPUS_200.length,
+    totalCorpusReferences: GLOBAL_TURNITIN_CORPUS_500.length,
     skripsi100PagesWordCount: skripsi100Words,
     skripsi100PagesCount: 100,
     legacyV14MeanAbsoluteError: Number((sumLegacyAbsErr / samples.length).toFixed(2)),

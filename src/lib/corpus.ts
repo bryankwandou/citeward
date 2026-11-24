@@ -1,4 +1,4 @@
-import globalCorpus200Json from '../data/global-reference-corpus-200.json';
+import globalCorpus500Json from '../data/global-reference-corpus-500.json';
 
 export interface CorpusSource {
   id: string;
@@ -25,11 +25,14 @@ export interface SampleManuscript {
   text: string;
 }
 
+export const GLOBAL_TURNITIN_CORPUS_500: CorpusSource[] =
+  globalCorpus500Json as CorpusSource[];
+
 export const GLOBAL_TURNITIN_CORPUS_200: CorpusSource[] =
-  globalCorpus200Json as CorpusSource[];
+  GLOBAL_TURNITIN_CORPUS_500.slice(0, 200);
 
 export const OPEN_ACADEMIC_CORPUS: CorpusSource[] =
-  GLOBAL_TURNITIN_CORPUS_200;
+  GLOBAL_TURNITIN_CORPUS_500;
 
 export const SAMPLE_MANUSCRIPTS: SampleManuscript[] = [
   {
