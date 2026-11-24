@@ -68,6 +68,19 @@ export interface SentenceStylometry {
   diagnosticNote: string;
 }
 
+export interface StylometricForensicSignals {
+  staccatoFragmentRatio: number; // fraction of sentences <= 5 words (0..1)
+  microParagraphRatio: number; // fraction of paragraphs <= 24 words (0..1)
+  lexicalEchoRatio: number; // fraction of content words repeated within 28 words (0..1)
+  narrativeBeatCount: number; // repetitive dialogue/action beats detected
+  macroChunkStability: number; // 0..100 uniformity across 300-word windows
+  detectedProfile:
+    | 'academic_synthetic'
+    | 'narrative_staccato_ai'
+    | 'hybrid_ai'
+    | 'human_empirical';
+}
+
 export interface StylometricReport {
   overallAiPercent: number;
   qualifyingAiWords: number;
@@ -81,6 +94,7 @@ export interface StylometricReport {
   sentences: SentenceStylometry[];
   verdictLabel: string;
   verdictSummary: string;
+  forensicSignals?: StylometricForensicSignals;
 }
 
 export interface IntegrityAuditResult {
@@ -728,11 +742,17 @@ const TRANSITION_STARTERS_REGEX =
 const NOMINALIZATION_REGEX =
   /\b[\p{L}]{4,}(?:isasi|itas|ansi|ensi|tion|ment|ness|ity|ance|ence)\b/giu;
 
+const NARRATIVE_DIALOGUE_TAG_REGEX =
+  /["“][^"”]{1,150}[,.!?]["”]\s*(?:kata(?:nya)?|ujar(?:nya)?|jawab(?:nya)?|tanya(?:nya)?|bisik(?:nya)?|gumam(?:nya)?|sahut(?:nya)?|ucap(?:nya)?|balas(?:nya)?|said|asked|replied|whispered|murmured|muttered)\b/gi;
+
+const NARRATIVE_LLM_BEATS_REGEX =
+  /\b(?:nyengir|tersenyum\s+tipis|menghela\s+napas|hela\s+napas|mengangguk\s+pelan|ngangguk|diam\s+sejenak|sunyi\s+sejenak|suara\s+pelan|tanpa\s+sadar|nahan\s+gerak|ngelihat|nutup\s+telepon|bilang\s+lagi|ngomong\s+lagi|let\s+out\s+a\s+breath|beat\s+of\s+silence|eyes\s+narrowed|jaw\s+tightened|barely\s+audible|silent\s+for\s+a\s+beat)\b/gi;
+
 /**
- * Evaluates sentence-level and document-level stylometric telemetry
- * (Burstiness CV, MATTR-50, Shannon Bigram Entropy, Formulaic Discourse Markers).
- * Uses line-aware prose segmentation and local 5-sentence window burstiness so
- * chapter headings, tables, or references in 6,500+ word PDFs never distort CV.
+ * Evaluates sentence-level and document-level stylometric telemetry across BOTH
+ * formal academic prose and narrative/staccato LLM prose (Burstiness CV, MATTR-50,
+ * Shannon Bigram Entropy, Formulaic Discourse Markers, Staccato Fragment Ratio,
+ * Micro-Paragraph Cadence, Lexical Echo, and Macro Chunk Stability).
  */
 export function evaluateStylometry(text: string): StylometricReport {
   const bibStart = findBibliographyStart(text);
@@ -748,13 +768,13 @@ export function evaluateStylometry(text: string): StylometricReport {
       continue;
     }
     const isHeading =
-      /^(?:BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup)/i.test(
+      /^(?:===\s*HALAMAN|BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup)/i.test(
         trimmedLine
       ) && trimmedLine.length < 85;
 
     if (isHeading) {
       unwrappedBody += '\n' + trimmedLine + '.\n';
-    } else if (/[.!?;:"]$/.test(trimmedLine)) {
+    } else if (/[.!?;:"”]$/.test(trimmedLine)) {
       unwrappedBody += trimmedLine + '\n';
     } else {
       unwrappedBody += trimmedLine + ' ';
@@ -763,28 +783,46 @@ export function evaluateStylometry(text: string): StylometricReport {
 
   const bodyText = unwrappedBody.trim() || rawBodyText;
 
-  // Segment sentences with exact offsets; if a PDF block has > 42 words without punctuation, split into ~20-word clauses
-  const rawSentences: Array<{ text: string; start: number; end: number; words: string[] }> = [];
+  // 1. Pre-scan ALL sentences (including 1-5 word staccato fragments) & paragraphs for narrative/staccato LLM cadence
+  const rawParagraphs = rawBodyText
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.trim())
+    .filter(
+      (p) =>
+        p.length > 0 &&
+        !/^(?:===\s*HALAMAN|BAB\s+[IVX0-9]+|LAMPIRAN|DAFTAR\s+PUSTAKA|REFERENCES)/i.test(p)
+    );
+  const microParaCount = rawParagraphs.filter((p) => {
+    const wc = (p.match(/[\p{L}\p{N}]+/gu) || []).length;
+    return wc >= 1 && wc <= 24;
+  }).length;
+  const microParagraphRatio =
+    rawParagraphs.length >= 4
+      ? Number((microParaCount / rawParagraphs.length).toFixed(3))
+      : 0;
+
+  const allSentEntries: Array<{ text: string; start: number; end: number; words: string[] }> = [];
   const lineRegex = /[^\r\n]+/g;
   let lineMatch: RegExpExecArray | null;
 
   while ((lineMatch = lineRegex.exec(bodyText)) !== null) {
     const lineStr = lineMatch[0];
     const lineOffset = lineMatch.index;
+    if (/^\s*(?:===\s*HALAMAN|BAB\s+[IVX0-9]+)/i.test(lineStr)) continue;
 
-    const sentenceRegex = /[^.!?;]+[.!?;]+(?:\s+|$)|[^.!?;]+$/g;
+    const sentenceRegex = /[^.!?;]+[.!?;]+["”']?(?:\s+|$)|[^.!?;]+$/g;
     let m: RegExpExecArray | null;
     while ((m = sentenceRegex.exec(lineStr)) !== null) {
       const trimmed = m[0].trim();
-      if (trimmed.length < 18) continue;
+      if (trimmed.length < 2) continue;
       const words = trimmed.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
-      if (words.length < 6) continue;
+      if (words.length < 1) continue;
 
       const leadSpaces = m[0].indexOf(trimmed);
       const baseStart = lineOffset + m.index + leadSpaces;
 
       if (words.length <= 42) {
-        rawSentences.push({
+        allSentEntries.push({
           text: trimmed,
           start: baseStart,
           end: baseStart + trimmed.length,
@@ -808,7 +846,7 @@ export function evaluateStylometry(text: string): StylometricReport {
           if (chunkWords.length >= targetLen) {
             const cleanChunk = chunkText.trim();
             if (cleanChunk.length >= 18) {
-              rawSentences.push({
+              allSentEntries.push({
                 text: cleanChunk,
                 start: chunkStart,
                 end: currentOffset,
@@ -823,7 +861,7 @@ export function evaluateStylometry(text: string): StylometricReport {
         }
         if (chunkWords.length >= 8) {
           const cleanChunk = chunkText.trim();
-          rawSentences.push({
+          allSentEntries.push({
             text: cleanChunk,
             start: chunkStart,
             end: currentOffset,
@@ -833,6 +871,40 @@ export function evaluateStylometry(text: string): StylometricReport {
       }
     }
   }
+
+  // Compute staccato fragment ratio & consecutive staccato burst ratio
+  const totalAllSents = allSentEntries.length;
+  let shortFragmentCount = 0;
+  let consecutiveShortCount = 0;
+  for (let i = 0; i < totalAllSents; i++) {
+    const isShort = allSentEntries[i].words.length <= 5;
+    if (isShort) {
+      shortFragmentCount++;
+      const prevShort = i > 0 && allSentEntries[i - 1].words.length <= 5;
+      const nextShort = i + 1 < totalAllSents && allSentEntries[i + 1].words.length <= 5;
+      if (prevShort || nextShort) consecutiveShortCount++;
+    }
+  }
+  const staccatoFragmentRatio =
+    totalAllSents >= 6 ? Number((shortFragmentCount / totalAllSents).toFixed(3)) : 0;
+  const staccatoClusterRatio =
+    totalAllSents >= 6 ? Number((consecutiveShortCount / totalAllSents).toFixed(3)) : 0;
+
+  // Count repetitive narrative dialogue attributions & LLM micro-action beats
+  const dialogueTagHits = (rawBodyText.match(NARRATIVE_DIALOGUE_TAG_REGEX) || []).length;
+  const narrativeBeatHits = (rawBodyText.match(NARRATIVE_LLM_BEATS_REGEX) || []).length;
+  const narrativeBeatCount = dialogueTagHits + narrativeBeatHits;
+  const narrativeBeatDensity =
+    totalAllSents >= 4 ? narrativeBeatCount / totalAllSents : 0;
+
+  // Determine whether document uses staccato/dialogue LLM narrative style (if so, keep 1-5w staccato fragments in sentences[])
+  const isStaccatoNarrativeCandidate =
+    (staccatoFragmentRatio >= 0.28 && staccatoClusterRatio >= 0.14) ||
+    (microParagraphRatio >= 0.55 && narrativeBeatCount >= 2);
+
+  const rawSentences = isStaccatoNarrativeCandidate
+    ? allSentEntries
+    : allSentEntries.filter((s) => s.text.length >= 18 && s.words.length >= 6);
 
   // Filter prose sentences (7..42 words) for clean Burstiness CV calculation
   const proseLengths = rawSentences
@@ -878,6 +950,81 @@ export function evaluateStylometry(text: string): StylometricReport {
   }
   mattr50 = Number(mattr50.toFixed(3));
 
+  // Local Lexical Echo Ratio (fraction of >=4-char words repeated within the prior 28 content words)
+  const contentWords = allWords.filter((w) => w.length >= 4);
+  let echoedCount = 0;
+  const recentSet = new Map<string, number>();
+  for (let i = 0; i < contentWords.length; i++) {
+    const w = contentWords[i];
+    const lastPos = recentSet.get(w);
+    if (lastPos !== undefined && i - lastPos <= 28) {
+      echoedCount++;
+    }
+    recentSet.set(w, i);
+  }
+  const lexicalEchoRatio =
+    contentWords.length >= 25
+      ? Number((echoedCount / contentWords.length).toFixed(3))
+      : 0;
+
+  // Macro Inter-Chunk Stability for long PDFs (>= 1,200 words): measures how locked MATTR & word-length stay across 300w blocks
+  let macroChunkStability = 0;
+  if (allWords.length >= 1200) {
+    const chunkSize = 300;
+    const totalChunks = Math.floor(allWords.length / chunkSize);
+    const step = Math.max(1, Math.floor(totalChunks / 45));
+    const chunkTtrs: number[] = [];
+    const chunkWLens: number[] = [];
+    for (let c = 0; c < totalChunks; c += step) {
+      const slice = allWords.slice(c * chunkSize, (c + 1) * chunkSize);
+      chunkTtrs.push(new Set(slice).size / chunkSize);
+      chunkWLens.push(slice.reduce((a, w) => a + w.length, 0) / chunkSize);
+    }
+    if (chunkTtrs.length >= 4) {
+      const mTtr = chunkTtrs.reduce((a, b) => a + b, 0) / chunkTtrs.length;
+      const vTtr =
+        chunkTtrs.reduce((acc, x) => acc + Math.pow(x - mTtr, 2), 0) / chunkTtrs.length;
+      const cvTtr = mTtr > 0 ? Math.sqrt(vTtr) / mTtr : 1;
+
+      const mLen = chunkWLens.reduce((a, b) => a + b, 0) / chunkWLens.length;
+      const vLen =
+        chunkWLens.reduce((acc, x) => acc + Math.pow(x - mLen, 2), 0) / chunkWLens.length;
+      const cvLen = mLen > 0 ? Math.sqrt(vLen) / mLen : 1;
+
+      const combinedCv = (cvTtr + cvLen) / 2;
+      macroChunkStability = Math.max(0, Math.min(100, Math.round((1 - combinedCv * 6.5) * 100)));
+    }
+  }
+
+  // Document-level Multi-Genre Narrative / Staccato AI Calibration Boost (zero effect on normal empirical human prose)
+  const staccatoBoost =
+    staccatoFragmentRatio >= 0.40 && staccatoClusterRatio >= 0.25
+      ? 34
+      : staccatoFragmentRatio >= 0.28 && staccatoClusterRatio >= 0.14
+        ? 22
+        : 0;
+  const microParaBoost =
+    microParagraphRatio >= 0.65 ? 20 : microParagraphRatio >= 0.48 ? 12 : 0;
+  const dialogueBeatBoost =
+    narrativeBeatDensity >= 0.16 && narrativeBeatCount >= 2
+      ? 18
+      : narrativeBeatDensity >= 0.08 && narrativeBeatCount >= 2
+        ? 10
+        : 0;
+  const lexicalEchoBoost =
+    (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0) &&
+    ((mattr50 > 0 && mattr50 < 0.76) || lexicalEchoRatio >= 0.16)
+      ? 14
+      : 0;
+  const macroLongPdfBoost =
+    allWords.length >= 1500 &&
+    macroChunkStability >= 70 &&
+    (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0)
+      ? 10
+      : 0;
+  const narrativeAiDocBoost =
+    staccatoBoost + microParaBoost + dialogueBeatBoost + lexicalEchoBoost + macroLongPdfBoost;
+
   // Character bigram Shannon entropy
   const cleanLower = bodyText.toLowerCase().replace(/\s+/g, ' ');
   const bigramCounts = new Map<string, number>();
@@ -896,7 +1043,7 @@ export function evaluateStylometry(text: string): StylometricReport {
   }
   shannonEntropy = Number(shannonEntropy.toFixed(2));
 
-  // Score each sentence using both global and local 5-sentence sliding window burstiness
+  // Score each sentence using academic + multi-genre staccato/narrative stylometric telemetry
   let totalMarkerHits = 0;
   const sentences: SentenceStylometry[] = rawSentences.map((s, idx) => {
     const words = s.words;
@@ -918,7 +1065,7 @@ export function evaluateStylometry(text: string): StylometricReport {
     const localVar =
       localLens.length > 1
         ? localLens.reduce((acc, l) => acc + Math.pow(l - localMean, 2), 0) /
-        localLens.length
+          localLens.length
         : 0;
     const localCv = localMean > 0 ? Math.sqrt(localVar) / localMean : burstinessScore;
     const effectiveCv = Math.min(burstinessScore, localCv);
@@ -929,6 +1076,13 @@ export function evaluateStylometry(text: string): StylometricReport {
     if (hasTransitionStarter && hits.length === 0) {
       const mStarter = s.text.trim().match(TRANSITION_STARTERS_REGEX);
       if (mStarter) hits.push(mStarter[0].toLowerCase());
+    }
+    const hasSentenceDialogueBeat =
+      NARRATIVE_DIALOGUE_TAG_REGEX.test(s.text) || NARRATIVE_LLM_BEATS_REGEX.test(s.text);
+    NARRATIVE_DIALOGUE_TAG_REGEX.lastIndex = 0;
+    NARRATIVE_LLM_BEATS_REGEX.lastIndex = 0;
+    if (hasSentenceDialogueBeat && narrativeAiDocBoost >= 24) {
+      hits.push('staccato/narrative AI cadence');
     }
     totalMarkerHits += hits.length;
 
@@ -942,7 +1096,8 @@ export function evaluateStylometry(text: string): StylometricReport {
     const lowBurstinessPenalty =
       effectiveCv < 0.22 ? 26 : effectiveCv < 0.34 ? 14 : effectiveCv < 0.42 ? 6 : 0;
     // 3. Formulaic discourse marker hits
-    const markerScore = hits.length * 32;
+    const markerScore =
+      hits.filter((h) => h !== 'staccato/narrative AI cadence').length * 32;
     // 4. Abstract academic nominalization & word length
     const hasDigits = /\d/.test(s.text);
     const hasQuestion = /\?/.test(s.text);
@@ -950,24 +1105,35 @@ export function evaluateStylometry(text: string): StylometricReport {
       (avgWordLength > 5.9 && !hasDigits ? 18 : 0) + (nominalDensity >= 0.14 ? 12 : 0);
     const concreteBonus = (hasDigits ? -16 : 0) + (hasQuestion ? -14 : 0);
 
+    // 5. Narrative / staccato AI sentence reinforcement (active only when document exhibits multi-signal narrative AI rhythm)
+    const sentenceStaccatoReinforce =
+      narrativeAiDocBoost >= 30
+        ? (wordCount <= 5 ? 16 : 0) + (hasSentenceDialogueBeat ? 14 : 0)
+        : 0;
+
     const rawProb =
       14 +
       (inUniformBand ? 16 : 0) +
       lowBurstinessPenalty +
       markerScore +
       abstractAcademicPenalty +
-      concreteBonus;
+      concreteBonus +
+      narrativeAiDocBoost +
+      sentenceStaccatoReinforce;
 
     const aiProbability = Math.max(2, Math.min(98, Math.round(rawProb)));
     const classification: 'human' | 'mixed' | 'synthetic' =
       aiProbability >= 65 ? 'synthetic' : aiProbability >= 42 ? 'mixed' : 'human';
 
     let diagnosticNote = 'Varied cadence and concrete lexical choices.';
-    if (hits.length > 0) {
-      diagnosticNote = `Contains formulaic transition phrasing ("${hits[0]}"). Replace with direct empirical subject-verb-object statement.`;
+    if (narrativeAiDocBoost >= 34 && (wordCount <= 5 || hasSentenceDialogueBeat)) {
+      diagnosticNote =
+        'Staccato micro-sentence / repetitive dialogue beat typical of generative LLM narrative output.';
+    } else if (hits.length > 0) {
+      diagnosticNote = `Contains formulaic phrasing ("${hits[0]}"). Replace with direct empirical statement.`;
     } else if (aiProbability >= 65) {
       diagnosticNote =
-        'Uniform clause length and abstract nominalization. Add specific measurements, citations, or vary sentence length.';
+        'High stylometric predictability (uniform clause rhythm or synthetic narrative cadence).';
     } else if (aiProbability >= 42) {
       diagnosticNote =
         'Moderate structural predictability. Consider tightening passive clauses.';
@@ -1006,10 +1172,23 @@ export function evaluateStylometry(text: string): StylometricReport {
         ? '*%'
         : `${roundedAi}%`;
 
+  const detectedProfile: StylometricForensicSignals['detectedProfile'] =
+    narrativeAiDocBoost >= 34 && overallAiPercent >= 60
+      ? 'narrative_staccato_ai'
+      : overallAiPercent >= 60
+        ? 'academic_synthetic'
+        : overallAiPercent >= 25
+          ? 'hybrid_ai'
+          : 'human_empirical';
+
   let verdictLabel = 'Authentic Human Cadence';
   let verdictSummary =
     'Sentence length variance (burstiness) and concrete lexical distribution match authentic human academic writing.';
-  if (overallAiPercent >= 60) {
+  if (detectedProfile === 'narrative_staccato_ai') {
+    verdictLabel = 'High Synthetic AI Narrative / Staccato Cadence';
+    verdictSummary =
+      'High staccato micro-sentence clustering, micro-paragraph beat uniformity, repetitive dialogue tags, and local lexical echo indicate generative LLM prose.';
+  } else if (overallAiPercent >= 60) {
     verdictLabel = 'High Synthetic Stylometric Uniformity';
     verdictSummary =
       'Low sentence-length variance and frequent formulaic transitions indicate synthetic generation or heavy LLM paraphrasing.';
@@ -1032,6 +1211,14 @@ export function evaluateStylometry(text: string): StylometricReport {
     sentences,
     verdictLabel,
     verdictSummary,
+    forensicSignals: {
+      staccatoFragmentRatio,
+      microParagraphRatio,
+      lexicalEchoRatio,
+      narrativeBeatCount,
+      macroChunkStability,
+      detectedProfile,
+    },
   };
 }
 

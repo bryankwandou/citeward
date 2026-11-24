@@ -1031,7 +1031,7 @@ export function FeedbackStudio() {
 
           {/* RIGHT: Clean Turnitin Layer Panel (4 cols) */}
           <div className="lg:col-span-4 cw-reveal cw-d1 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden sticky top-20">
-            {/* Turnitin Dual Score Banner */}
+            {/* Turnitin Dual Score Banner with Animated SVG Ring Gauges */}
             <div className="p-4 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -1039,20 +1039,47 @@ export function FeedbackStudio() {
                   setViewerLayer('similarity');
                   setActiveTab('sources');
                 }}
-                className={`text-left p-3.5 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'sources' || activeTab === 'filters'
+                className={`cw-lift text-left p-3 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'sources' || activeTab === 'filters'
                     ? 'border-[var(--cw-corpus)]'
                     : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
                   }`}
               >
-                <div className="cw-mono text-[10px] uppercase tracking-wider text-[var(--cw-ink-3)]">
-                  Similarity Score
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="cw-mono text-[10px] uppercase tracking-wider text-[var(--cw-ink-3)]">
+                      Similarity Score
+                    </div>
+                    <div className={`cw-mono text-3xl font-bold mt-0.5 ${bandStyle.scoreText}`}>
+                      {audit.roundedSimilarityPercent}%
+                    </div>
+                  </div>
+                  <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90 shrink-0" aria-hidden="true">
+                    <circle cx="22" cy="22" r="18" fill="none" stroke="var(--cw-rule)" strokeWidth="4" />
+                    <circle
+                      cx="22"
+                      cy="22"
+                      r="18"
+                      fill="none"
+                      stroke={
+                        audit.roundedSimilarityPercent === 0
+                          ? '#1939B7'
+                          : audit.roundedSimilarityPercent < 25
+                          ? '#116B3F'
+                          : audit.roundedSimilarityPercent < 50
+                          ? '#9E6E00'
+                          : '#B3261E'
+                      }
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 18}
+                      strokeDashoffset={
+                        2 * Math.PI * 18 * (1 - Math.min(100, audit.roundedSimilarityPercent) / 100)
+                      }
+                      className="cw-gauge-arc"
+                    />
+                  </svg>
                 </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className={`cw-mono text-4xl font-bold ${bandStyle.scoreText}`}>
-                    {audit.roundedSimilarityPercent}%
-                  </span>
-                </div>
-                <div className="cw-mono text-[11px] text-[var(--cw-ink-3)] mt-1">
+                <div className="cw-mono text-[10px] text-[var(--cw-ink-3)] mt-1.5 truncate">
                   {audit.matchedWords}/{audit.evaluableWords}w · {audit.overallSimilarityPercent.toFixed(1)}% exact
                 </div>
               </button>
@@ -1063,20 +1090,45 @@ export function FeedbackStudio() {
                   setViewerLayer('ai');
                   setActiveTab('ai');
                 }}
-                className={`text-left p-3.5 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'ai'
+                className={`cw-lift text-left p-3 rounded-[8px] border bg-[var(--cw-raised)] transition-colors cursor-pointer ${activeTab === 'ai'
                     ? 'border-[var(--cw-stylo)]'
                     : 'border-[var(--cw-rule)] hover:border-[var(--cw-rule-2)]'
                   }`}
               >
-                <div className="cw-mono text-[10px] uppercase tracking-wider text-[var(--cw-ink-3)]">
-                  AI Writing Indicator
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="cw-mono text-[10px] uppercase tracking-wider text-[var(--cw-ink-3)]">
+                      AI Writing Indicator
+                    </div>
+                    <div className="cw-mono text-3xl font-bold mt-0.5 text-[var(--cw-corpus-ink)]">
+                      {audit.stylometry.turnitinAiIndicator}
+                    </div>
+                  </div>
+                  <svg width="44" height="44" viewBox="0 0 44 44" className="-rotate-90 shrink-0" aria-hidden="true">
+                    <circle cx="22" cy="22" r="18" fill="none" stroke="var(--cw-rule)" strokeWidth="4" />
+                    <circle
+                      cx="22"
+                      cy="22"
+                      r="18"
+                      fill="none"
+                      stroke={
+                        audit.stylometry.overallAiPercent >= 60
+                          ? '#A80C60'
+                          : audit.stylometry.overallAiPercent >= 25
+                          ? '#027A94'
+                          : '#116B3F'
+                      }
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 18}
+                      strokeDashoffset={
+                        2 * Math.PI * 18 * (1 - Math.min(100, audit.stylometry.overallAiPercent) / 100)
+                      }
+                      className="cw-gauge-arc"
+                    />
+                  </svg>
                 </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className="cw-mono text-4xl font-bold text-[var(--cw-corpus-ink)]">
-                    {audit.stylometry.turnitinAiIndicator}
-                  </span>
-                </div>
-                <div className="cw-mono text-[11px] text-[var(--cw-ink-3)] mt-1">
+                <div className="cw-mono text-[10px] text-[var(--cw-ink-3)] mt-1.5 truncate">
                   Est. {audit.stylometry.overallAiPercent.toFixed(1)}% · {audit.stylometry.qualifyingAiWords}w prose
                 </div>
               </button>
@@ -1567,6 +1619,43 @@ export function FeedbackStudio() {
                       </div>
                     </div>
                   </div>
+
+                  {audit.stylometry.forensicSignals && (
+                    <div className="pt-2 border-t border-[var(--cw-rule)] space-y-1.5 cw-mono text-[11px]">
+                      <div className="flex justify-between text-[var(--cw-ink-2)]">
+                        <span>Detected Profile:</span>
+                        <span className="font-bold text-[var(--cw-stylo-ink)]">
+                          {audit.stylometry.forensicSignals.detectedProfile.replace(/_/g, ' ')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[var(--cw-ink-2)]">
+                        <span>Staccato &le;5w Sentences:</span>
+                        <span className="font-semibold text-[var(--cw-ink)]">
+                          {Math.round(audit.stylometry.forensicSignals.staccatoFragmentRatio * 100)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[var(--cw-ink-2)]">
+                        <span>Micro-Paragraph (&le;24w):</span>
+                        <span className="font-semibold text-[var(--cw-ink)]">
+                          {Math.round(audit.stylometry.forensicSignals.microParagraphRatio * 100)}%
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-[var(--cw-ink-2)]">
+                        <span>Lexical Echo / MATTR-50:</span>
+                        <span className="font-semibold text-[var(--cw-ink)]">
+                          {Math.round(audit.stylometry.forensicSignals.lexicalEchoRatio * 100)}% · {audit.stylometry.mattr50}
+                        </span>
+                      </div>
+                      {audit.stylometry.forensicSignals.macroChunkStability > 0 && (
+                        <div className="flex justify-between text-[var(--cw-ink-2)]">
+                          <span>Macro Chunk Uniformity:</span>
+                          <span className="font-semibold text-[var(--cw-ink)]">
+                            {audit.stylometry.forensicSignals.macroChunkStability}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-3 rounded-[8px] border border-[var(--cw-rule)] bg-[var(--cw-paper)] space-y-1.5">

@@ -16,6 +16,7 @@ import benchmarkReportJson from '@/data/head-to-head-20-samples-report.json';
 import { GLOBAL_TURNITIN_CORPUS_500 } from '@/lib/corpus';
 import { HeadToHeadBenchmarkSuiteReport } from '@/lib/head-to-head-benchmark';
 import { SKRIPSI_100_METADATA } from '@/lib/skripsi-100-halaman';
+import { FingerprintConstellationCanvas } from '@/components/FingerprintConstellationCanvas';
 
 const REPORT = benchmarkReportJson as HeadToHeadBenchmarkSuiteReport;
 
@@ -109,9 +110,10 @@ export default function BenchmarkPage() {
 
   return (
     <div className="cw-container py-8 space-y-8">
-      {/* Header */}
-      <section className="cw-card p-6 md:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="space-y-2 max-w-3xl">
+      {/* Header with 1,024-Node Animated Fingerprint Constellation */}
+      <section className="relative overflow-hidden cw-card p-6 md:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-6 cw-reveal">
+        <FingerprintConstellationCanvas mode="excluded" nodeCount={1024} />
+        <div className="relative z-10 space-y-2 max-w-3xl">
           <div className="cw-mono text-xs uppercase tracking-wider text-[var(--cw-signal)] font-semibold">
             Head-to-Head Turnitin Calibration Lab
           </div>
@@ -126,7 +128,7 @@ export default function BenchmarkPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2.5 shrink-0">
+        <div className="relative z-10 flex flex-wrap gap-2.5 shrink-0">
           <Link
             href="/studio?sample=skripsi-100-halaman-full"
             className="cw-btn-primary text-xs !py-2.5 !px-4"

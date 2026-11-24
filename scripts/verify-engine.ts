@@ -85,6 +85,30 @@ async function main() {
     `[PASS] Stylometric Separation: Synthetic AI=${syntheticAudit.stylometry.overallAiPercent}% (CV=${syntheticAudit.stylometry.burstinessScore}) vs Human Empirical AI=${humanAudit.stylometry.overallAiPercent}% (CV=${humanAudit.stylometry.burstinessScore})`
   );
 
+  // Verify Full-AI Staccato Indonesian Narrative / Dialogue PDF detection (>= 80% AI)
+  const staccatoNarrativeAi = [
+    '"Sandro di Marseille sampai sore," kata Tonio. "Aku harus tanya dia."',
+    '"Tanya."',
+    'Dia nelepon. Ngomong bahasa Korsika, pendek. Diam. Ngomong lagi. Terus dia nutup telepon dan ngelihat aku.',
+    '"Satu jam," katanya. "Aku di dalam flat sama kamu. Ghjuvan di mobil di depan gang. Kamu nggak keluar dari flat sampai aku bilang."',
+    '"Oke."',
+    '"Bilang lagi."',
+    '"Kalian semua kenapa, sih."',
+    'Tonio nyengir. "Itu kebiasaan Sandro. Nular."',
+    'Kami berangkat jam sepuluh. Renault abu-abu, Ghjuvan nyetir, Tonio di belakang sama aku. Lengan Tonio udah nggak digendong lagi, tapi dia masih nahan gerak tangan kirinya.',
+  ]
+    .join('\n\n')
+    .repeat(5);
+  const staccatoAiAudit = runManuscriptAudit(staccatoNarrativeAi);
+  assert(
+    staccatoAiAudit.stylometry.overallAiPercent >= 80 &&
+      staccatoAiAudit.stylometry.forensicSignals?.detectedProfile === 'narrative_staccato_ai',
+    `Expected Full-AI staccato narrative >= 80% (narrative_staccato_ai), got ${staccatoAiAudit.stylometry.overallAiPercent}% (${staccatoAiAudit.stylometry.forensicSignals?.detectedProfile})`
+  );
+  console.log(
+    `[PASS] Full-AI Staccato Narrative Detection: AI=${staccatoAiAudit.stylometry.overallAiPercent}% (Indicator=${staccatoAiAudit.stylometry.turnitinAiIndicator}, Profile=${staccatoAiAudit.stylometry.forensicSignals?.detectedProfile}).`
+  );
+
   console.log('=== 4. Verifying Homoglyph Trap & Natural Human Paraphraser (<5% Sim) ===');
   const spoofed = 'Digit\u0430l d\u043Ecuments\u200B \u0430re copied.';
   const manip = scanDocumentManipulations(spoofed);
