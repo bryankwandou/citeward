@@ -295,7 +295,31 @@ function decodePdfLiteralString(raw: string): string {
     .join('');
 }
 
-function parseToUnicodeCMap(streamText: string, cmap: Map<number, string>): void {
+interface PdfCMapTables {
+  cmap1Byte: Map<number, string>;
+  cmap2Byte: Map<number, string>;
+}
+
+function decodeHexUtf16BeToString(dstHex: string): string {
+  const clean = dstHex.replace(/\s+/g, '');
+  let str = '';
+  if (clean.length <= 2) {
+    const cp = parseInt(clean, 16);
+    if (Number.isFinite(cp) && cp > 0) return String.fromCodePoint(cp);
+    return '';
+  }
+  for (let i = 0; i < clean.length; i += 4) {
+    const chunk = clean.slice(i, i + 4);
+    if (!chunk) continue;
+    const cp = parseInt(chunk, 16);
+    if (Number.isFinite(cp) && cp > 0) {
+      str += String.fromCodePoint(cp);
+    }
+  }
+  return str;
+}
+
+function parseToUnicodeCMap(streamText: string, tables: PdfCMapTables): void {
   // Parse beginbfchar ... endbfchar
   const bfcharRegex = /beginbfchar([\s\S]*?)endbfchar/g;
   let m: RegExpExecArray | null;
@@ -303,42 +327,71 @@ function parseToUnicodeCMap(streamText: string, cmap: Map<number, string>): void
     const pairRegex = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g;
     let p: RegExpExecArray | null;
     while ((p = pairRegex.exec(m[1])) !== null) {
-      const srcCode = parseInt(p[1], 16);
-      const dstHex = p[2];
-      let str = '';
-      for (let i = 0; i < dstHex.length; i += 4) {
-        const cp = parseInt(dstHex.slice(i, i + 4), 16);
-        if (Number.isFinite(cp) && cp > 0) str += String.fromCodePoint(cp);
+      const srcHex = p[1];
+      const srcCode = parseInt(srcHex, 16);
+      const str = decodeHexUtf16BeToString(p[2]);
+      if (str) {
+        if (srcHex.length >= 4) {
+          if (!tables.cmap2Byte.has(srcCode)) tables.cmap2Byte.set(srcCode, str);
+        } else {
+          if (!tables.cmap1Byte.has(srcCode)) tables.cmap1Byte.set(srcCode, str);
+        }
       }
-      if (str) cmap.set(srcCode, str);
     }
   }
 
-  // Parse beginbfrange ... endbfrange
+  // Parse beginbfrange ... endbfrange (both direct <dst> and array [<dst1> <dst2> ...] forms)
   const bfrangeRegex = /beginbfrange([\s\S]*?)endbfrange/g;
   while ((m = bfrangeRegex.exec(streamText)) !== null) {
-    const rangeRegex = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g;
+    const block = m[1];
+
+    // Form 1: <start> <end> <targetStart>
+    const directRangeRegex = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g;
     let r: RegExpExecArray | null;
-    while ((r = rangeRegex.exec(m[1])) !== null) {
-      const startCode = parseInt(r[1], 16);
+    while ((r = directRangeRegex.exec(block)) !== null) {
+      const srcHex = r[1];
+      const startCode = parseInt(srcHex, 16);
       const endCode = parseInt(r[2], 16);
       let targetCp = parseInt(r[3], 16);
-      if (endCode - startCode <= 2048) {
+      const targetMap = srcHex.length >= 4 ? tables.cmap2Byte : tables.cmap1Byte;
+      if (endCode >= startCode && endCode - startCode <= 2048) {
         for (let c = startCode; c <= endCode; c++) {
-          cmap.set(c, String.fromCodePoint(targetCp));
+          if (!targetMap.has(c) && targetCp > 0 && targetCp <= 0x10ffff) {
+            targetMap.set(c, String.fromCodePoint(targetCp));
+          }
           targetCp++;
+        }
+      }
+    }
+
+    // Form 2: <start> <end> [<dst1> <dst2> ...] (widely used by Word, Google Docs, Chrome PDF)
+    const arrayRangeRegex = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*\[([^\]]+)\]/g;
+    let ar: RegExpExecArray | null;
+    while ((ar = arrayRangeRegex.exec(block)) !== null) {
+      const srcHex = ar[1];
+      const startCode = parseInt(srcHex, 16);
+      const endCode = parseInt(ar[2], 16);
+      const targetMap = srcHex.length >= 4 ? tables.cmap2Byte : tables.cmap1Byte;
+      const dstHexMatches = ar[3].match(/<([0-9a-fA-F]+)>/g) || [];
+      for (let idx = 0; idx < dstHexMatches.length; idx++) {
+        const code = startCode + idx;
+        if (code > endCode) break;
+        const hexVal = dstHexMatches[idx].slice(1, -1);
+        const str = decodeHexUtf16BeToString(hexVal);
+        if (str && !targetMap.has(code)) {
+          targetMap.set(code, str);
         }
       }
     }
   }
 }
 
-function decodePdfHexString(hex: string, cmap: Map<number, string>): string {
+function decodePdfHexString(hex: string, tables: PdfCMapTables): string {
   const clean = hex.replace(/\s+/g, '');
   if (!clean) return '';
 
-  // Try 4-hex-digit (2-byte) codes first if CMap has 2-byte keys or UTF-16BE
-  if (clean.length % 4 === 0 && clean.startsWith('FEFF')) {
+  // UTF-16BE BOM
+  if (clean.length % 4 === 0 && clean.toUpperCase().startsWith('FEFF')) {
     let out = '';
     for (let i = 4; i < clean.length; i += 4) {
       const cp = parseInt(clean.slice(i, i + 4), 16);
@@ -347,25 +400,62 @@ function decodePdfHexString(hex: string, cmap: Map<number, string>): string {
     return out;
   }
 
-  // Check if CMap matches 2-byte or 1-byte codes
+  // Use 4-hex-digit (2-byte) decoding whenever a 2-byte CMap exists and hex length is divisible by 4
+  const use2Byte = clean.length % 4 === 0 && tables.cmap2Byte.size > 0;
+  const step = use2Byte ? 4 : 2;
+  const activeMap = use2Byte ? tables.cmap2Byte : tables.cmap1Byte;
+
   let out = '';
-  const step = clean.length % 4 === 0 && cmap.size > 256 ? 4 : 2;
   for (let i = 0; i < clean.length; i += step) {
     const code = parseInt(clean.slice(i, i + step), 16);
-    if (cmap.has(code)) {
-      out += cmap.get(code)!;
+    if (activeMap.has(code)) {
+      out += activeMap.get(code)!;
+    } else if (!use2Byte && tables.cmap2Byte.has(code)) {
+      out += tables.cmap2Byte.get(code)!;
     } else if (code >= 32 && code <= 126) {
       out += String.fromCharCode(code);
-    } else if (step === 4 && code >= 32 && code <= 0xffff) {
+    } else if (step === 4 && code >= 0x00a0 && code <= 0x024f) {
       out += String.fromCharCode(code);
     }
   }
   return out;
 }
 
+function decodeAscii85(raw: Buffer): Buffer | null {
+  try {
+    const str = raw.toString('latin1').replace(/\s+/g, '');
+    const endIdx = str.indexOf('~>');
+    const body = endIdx >= 0 ? str.slice(0, endIdx) : str;
+    const out: number[] = [];
+    let i = 0;
+    while (i < body.length) {
+      if (body[i] === 'z') {
+        out.push(0, 0, 0, 0);
+        i++;
+        continue;
+      }
+      const chunk = body.slice(i, i + 5);
+      if (!chunk.length) break;
+      const pad = 5 - chunk.length;
+      const padded = chunk + 'u'.repeat(pad);
+      let val = 0;
+      for (let k = 0; k < 5; k++) {
+        val = val * 85 + (padded.charCodeAt(k) - 33);
+      }
+      const bytes = [(val >>> 24) & 0xff, (val >>> 16) & 0xff, (val >>> 8) & 0xff, val & 0xff];
+      for (let b = 0; b < 4 - pad; b++) out.push(bytes[b]);
+      i += chunk.length;
+    }
+    return Buffer.from(out);
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Extracts text from a PDF buffer by decompressing FlateDecode streams,
- * applying ToUnicode CMaps, and parsing BT..ET text blocks (Tj, TJ, ', ", Td, TD, T*).
+ * Extracts text from a PDF buffer by decompressing FlateDecode / ASCII85 streams,
+ * applying 1-byte and 2-byte Identity-H ToUnicode CMaps (both bfchar & bfrange array forms),
+ * and parsing BT..ET text blocks (Tj, TJ, ', ", Td, TD, T*, Tm).
  */
 export function extractTextFromPdfBuffer(buffer: Buffer): {
   text: string;
@@ -374,13 +464,18 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 } {
   const warnings: string[] = [];
   const rawLatin1 = buffer.toString('latin1');
+  const isEncryptedPdf = /\/Encrypt\s+\d+\s+\d+\s+R|\/Encrypt\s*<</.test(rawLatin1);
 
   // Estimate page count from /Type /Page (not /Pages)
   const pageMatches = rawLatin1.match(/\/Type\s*\/Page\b(?!s)/g);
   const pageCount = Math.max(1, pageMatches ? pageMatches.length : 1);
 
   const decodedStreams: string[] = [];
-  const cmap = new Map<number, string>();
+  const cmapTables: PdfCMapTables = {
+    cmap1Byte: new Map<number, string>(),
+    cmap2Byte: new Map<number, string>(),
+  };
+  let imageStreamCount = 0;
 
   // Locate all stream ... endstream blocks
   let searchPos = 0;
@@ -414,13 +509,27 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
       dataEnd -= 1;
     }
 
-    // Check object header preceding stream for /Filter /FlateDecode
-    const headerSlice = rawLatin1.slice(Math.max(0, streamIdx - 320), streamIdx);
-    const isFlate = /\/FlateDecode\b/.test(headerSlice);
+    // Check object header preceding stream (1024-byte lookback handles long Word/Acrobat stream dictionaries)
+    const headerSlice = rawLatin1.slice(Math.max(0, streamIdx - 1024), streamIdx);
     const isImage = /\/Subtype\s*\/Image\b/.test(headerSlice);
+    if (isImage) {
+      imageStreamCount++;
+    }
 
     if (!isImage && dataEnd > dataStart) {
-      const rawSlice = buffer.subarray(dataStart, dataEnd);
+      let rawSlice: Buffer = buffer.subarray(dataStart, dataEnd);
+      const isAscii85 = /\/ASCII85Decode\b/.test(headerSlice);
+      if (isAscii85) {
+        const decoded85 = decodeAscii85(rawSlice);
+        if (decoded85) rawSlice = decoded85;
+      }
+
+      const hasZlibMagic =
+        rawSlice.length >= 2 &&
+        rawSlice[0] === 0x78 &&
+        (rawSlice[1] === 0x9c || rawSlice[1] === 0x01 || rawSlice[1] === 0xda || rawSlice[1] === 0x5e);
+      const isFlate = /\/FlateDecode\b/.test(headerSlice) || hasZlibMagic;
+
       let streamStr = '';
       if (isFlate) {
         try {
@@ -438,7 +547,7 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 
       if (streamStr) {
         if (streamStr.includes('beginbfchar') || streamStr.includes('beginbfrange')) {
-          parseToUnicodeCMap(streamStr, cmap);
+          parseToUnicodeCMap(streamStr, cmapTables);
         } else {
           decodedStreams.push(streamStr);
         }
@@ -460,7 +569,7 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 
     // Tokenize PDF text operators across the stream without cutting on "ET" inside words
     const tokenRegex =
-      /(\[(?:[^\[\]]|\((?:\\.|[^\\()])*\))*\]\s*TJ|\((?:\\.|[^\\()])*\)\s*(?:Tj|'|")|<[0-9a-fA-F\s]+>\s*Tj|-?\d+(?:\.\d+)?\s+(-?\d+(?:\.\d+)?)\s+T[dD]|(?:-?\d+(?:\.\d+)?\s+){5}(-?\d+(?:\.\d+)?)\s+Tm|\bT\*\b|\bET\b)/g;
+      /(\[(?:[^\[\]]|\((?:\\.|[^\\()])*\))*\]\s*TJ|\((?:\\.|[^\\()])*\)\s*(?:Tj|'|")|<[0-9a-fA-F\s]+>\s*(?:Tj|'|")|-?\d+(?:\.\d+)?\s+(-?\d+(?:\.\d+)?)\s+T[dD]|(?:-?\d+(?:\.\d+)?\s+){5}(-?\d+(?:\.\d+)?)\s+Tm|\bT\*\b|\bET\b)/g;
 
     let tok: RegExpExecArray | null;
     while ((tok = tokenRegex.exec(content)) !== null) {
@@ -503,14 +612,14 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
       }
 
       if (full.endsWith('TJ')) {
-        // Array of strings and kerning numbers: [(Hello) -20 (world)] TJ
+        // Array of strings and kerning numbers: [(Hello) -20 (world)] TJ or [<0024> -20 <0041>] TJ
         const innerRegex = /\(((?:\\.|[^\\()])*)\)|<([0-9a-fA-F\s]+)>|(-?\d+(?:\.\d+)?)/g;
         let part: RegExpExecArray | null;
         while ((part = innerRegex.exec(full)) !== null) {
           if (part[1] !== undefined) {
             currentLine += decodePdfLiteralString(part[1]);
           } else if (part[2] !== undefined) {
-            currentLine += decodePdfHexString(part[2], cmap);
+            currentLine += decodePdfHexString(part[2], cmapTables);
           } else if (part[3] !== undefined) {
             const kern = parseFloat(part[3]);
             if (kern <= -65 && !currentLine.endsWith(' ')) {
@@ -521,7 +630,7 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
       } else if (full.startsWith('<')) {
         const hexMatch = full.match(/^<([0-9a-fA-F\s]+)>/);
         if (hexMatch) {
-          currentLine += decodePdfHexString(hexMatch[1], cmap);
+          currentLine += decodePdfHexString(hexMatch[1], cmapTables);
         }
       } else {
         const litMatch = full.match(/^\(((?:\\.|[^\\()])*)\)/);
@@ -572,9 +681,19 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 
   const finalText = paragraphs.join('\n\n').trim();
   if (!finalText) {
-    warnings.push(
-      'This PDF appears to contain scanned raster images without an embedded text layer.'
-    );
+    if (isEncryptedPdf) {
+      warnings.push(
+        'This PDF is encrypted or password-protected. Remove PDF security or export as an unprotected .PDF / .DOCX before uploading.'
+      );
+    } else if (imageStreamCount > 0) {
+      warnings.push(
+        `This PDF contains ${imageStreamCount} raster image stream(s) without an embedded text layer (scanned PDF). Upload the original .DOCX, run OCR first, or paste the text directly in Edit Mode.`
+      );
+    } else {
+      warnings.push(
+        'No extractable text layer was found in this PDF. Upload the original .DOCX or paste the manuscript text directly in Edit Mode.'
+      );
+    }
   }
 
   return {

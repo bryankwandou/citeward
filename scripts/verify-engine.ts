@@ -1,3 +1,4 @@
+import zlib from 'node:zlib';
 import {
   GLOBAL_TURNITIN_CORPUS_200,
   GLOBAL_TURNITIN_CORPUS_500,
@@ -135,8 +136,31 @@ async function main() {
     parsedPdf.fileType === 'pdf' && parsedPdf.wordCount >= 40,
     `Expected PDF extraction >= 40 words, got ${parsedPdf.wordCount}`
   );
+
+  // Verify FlateDecode + 2-byte Identity-H CMap (beginbfrange array syntax, cmap.size < 256) Word/Chrome PDF extraction
+  const cmapStream = zlib.deflateSync(
+    Buffer.from(
+      'beginbfrange\n<0003> <0006> [<0054> <0045> <0053> <0054>]\nendbfrange\nbeginbfchar\n<0007> <0020>\n<0008> <0050>\n<0009> <0044>\n<000A> <0046>\nendbfchar',
+      'latin1'
+    )
+  );
+  const contentStream = zlib.deflateSync(
+    Buffer.from('BT /F1 12 Tf [<0003000400050006000700080009000A>] TJ ET', 'latin1')
+  );
+  const syntheticIdentityHPdf = Buffer.concat([
+    Buffer.from('%PDF-1.7\n1 0 obj << /Type /Page /Filter /FlateDecode >> stream\n', 'latin1'),
+    cmapStream,
+    Buffer.from('\nendstream\nendobj\n2 0 obj << /Filter /FlateDecode >> stream\n', 'latin1'),
+    contentStream,
+    Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1'),
+  ]);
+  const parsedIdentityHPdf = parseDocumentBuffer('word-identity-h.pdf', syntheticIdentityHPdf);
+  assert(
+    parsedIdentityHPdf.text.includes('TEST PDF'),
+    `Expected FlateDecode 2-byte Identity-H PDF to decode 'TEST PDF', got '${parsedIdentityHPdf.text}'`
+  );
   console.log(
-    `[PASS] Binary .DOCX (${parsedDocx.wordCount}w, Sim=${docxAudit.overallSimilarityPercent}%) & .PDF (${parsedPdf.wordCount}w) upload extraction verified.`
+    `[PASS] Binary .DOCX (${parsedDocx.wordCount}w, Sim=${docxAudit.overallSimilarityPercent}%) & .PDF (${parsedPdf.wordCount}w + Identity-H CMap) upload extraction verified.`
   );
 
   console.log('=== 6. Verifying Exact 0.0% Turnitin Parity Across All 5 Samples, Per-Source Union & DOI Query Extraction ===');
