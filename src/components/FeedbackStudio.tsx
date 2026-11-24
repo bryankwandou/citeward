@@ -873,8 +873,8 @@ export function FeedbackStudio() {
         {/* Turnitin 2-Column Document Viewer & Inspector Split */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* LEFT: Clean Paper Reader (8 cols) */}
-          <div className="lg:col-span-8 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden">
-            <div className="px-5 py-3 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex flex-wrap items-center justify-between gap-3">
+          <div className="lg:col-span-8 cw-reveal rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden">
+            <div className={`${scanningWeb ? 'cw-scan-line ' : ''}px-5 py-3 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex flex-wrap items-center justify-between gap-3`}>
               <div className="flex items-center gap-2.5 min-w-0">
                 <FileText className="w-4 h-4 text-[var(--cw-ink-3)] shrink-0" />
                 <div className="min-w-0">
@@ -1030,7 +1030,7 @@ export function FeedbackStudio() {
           </div>
 
           {/* RIGHT: Clean Turnitin Layer Panel (4 cols) */}
-          <div className="lg:col-span-4 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden sticky top-20">
+          <div className="lg:col-span-4 cw-reveal cw-d1 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-hidden sticky top-20">
             {/* Turnitin Dual Score Banner */}
             <div className="p-4 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] grid grid-cols-2 gap-3">
               <button

@@ -5,7 +5,7 @@ import { fetchLiveCandidateSourcesDetailed } from '@/lib/live-sources';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
 
 const InspectSchema = z.object({
-  text: z.string().min(1, 'Manuscript text is required.').max(250000),
+  text: z.string().min(1, 'Manuscript text is required.').max(600000),
   exclusions: z
     .object({
       excludeQuotes: z.boolean().default(false),
