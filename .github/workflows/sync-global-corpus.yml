@@ -1,0 +1,48 @@
+name: Verify Global Cloud Corpus Shards
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 0'
+
+jobs:
+  verify-shards:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify SHA-256 checksums and gzip integrity of all cloud shards
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+          const zlib = require('zlib');
+          const crypto = require('crypto');
+          const manifest = JSON.parse(fs.readFileSync('public/datasets/manifest.json', 'utf8'));
+          let total = 0;
+          for (const s of manifest.shards) {
+            const p = path.join('public', 'datasets', 'shards', s.file);
+            const buf = fs.readFileSync(p);
+            const hash = crypto.createHash('sha256').update(buf).digest('hex');
+            if (hash !== s.sha256) {
+              throw new Error('SHA-256 mismatch on ' + s.file + ': expected ' + s.sha256 + ', got ' + hash);
+            }
+            const unpacked = JSON.parse(zlib.gunzipSync(buf).toString('utf8'));
+            if (unpacked.rows.length !== s.count) {
+              throw new Error('Count mismatch on ' + s.file);
+            }
+            total += unpacked.rows.length;
+            console.log('[OK]', s.file, unpacked.rows.length, 'refs, sha256=' + hash.slice(0, 16) + '...');
+          }
+          if (total !== manifest.totalReferences) {
+            throw new Error('Total mismatch: ' + total + ' vs ' + manifest.totalReferences);
+          }
+          console.log('[PASS] Verified', total, 'references across', manifest.shards.length, 'gzip shards (0ms Vercel CPU).');
+          "
+

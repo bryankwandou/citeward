@@ -9,12 +9,17 @@ import {
   Database,
   ExternalLink,
   FileText,
+  RefreshCw,
   Search,
+  ShieldCheck,
   Wrench,
 } from 'lucide-react';
 import benchmarkReportJson from '@/data/head-to-head-20-samples-report.json';
 import { CorpusSource, GLOBAL_TURNITIN_CORPUS_500 } from '@/lib/corpus';
-import { loadCloudCorpus2500 } from '@/lib/cloud-corpus-loader';
+import {
+  CloudHydrationResult,
+  loadVerifiedShardedCloudCorpus,
+} from '@/lib/cloud-corpus-loader';
 import { HeadToHeadBenchmarkSuiteReport } from '@/lib/head-to-head-benchmark';
 import { SKRIPSI_100_METADATA } from '@/lib/skripsi-100-halaman';
 import { FingerprintConstellationCanvas } from '@/components/FingerprintConstellationCanvas';
@@ -78,19 +83,27 @@ export default function BenchmarkPage() {
   >('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCorpus, setActiveCorpus] = useState<CorpusSource[]>(GLOBAL_TURNITIN_CORPUS_500);
+  const [cloudResult, setCloudResult] = useState<CloudHydrationResult | null>(null);
+  const [verifyingGitHub, setVerifyingGitHub] = useState<boolean>(false);
+
+  const runDirectGitHubVerification = async (preferGitHubRaw: boolean, forceRefresh = false) => {
+    setVerifyingGitHub(true);
+    try {
+      const res = await loadVerifiedShardedCloudCorpus({
+        preferGitHubRaw,
+        forceRefresh,
+      });
+      if (res.sources.length > 0) {
+        setActiveCorpus(res.sources);
+        setCloudResult(res);
+      }
+    } finally {
+      setVerifyingGitHub(false);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-    loadCloudCorpus2500()
-      .then((cloud) => {
-        if (mounted && cloud.length > GLOBAL_TURNITIN_CORPUS_500.length) {
-          setActiveCorpus(cloud);
-        }
-      })
-      .catch(() => { });
-    return () => {
-      mounted = false;
-    };
+    runDirectGitHubVerification(false, false);
   }, []);
 
   const corpusStats = useMemo(() => {
@@ -202,13 +215,81 @@ export default function BenchmarkPage() {
             Global Reference Corpus
           </div>
           <div className="cw-display text-3xl font-bold text-[var(--cw-signal)]">
-            {corpusStats.total}
+            {corpusStats.total.toLocaleString()}
           </div>
           <div className="text-xs text-[var(--cw-ink-2)]">
-            {corpusStats.publications} Pub &middot; {corpusStats.internet} Web &middot;{' '}
-            {corpusStats.studentPapers} Student
+            {corpusStats.publications.toLocaleString()} Pub &middot;{' '}
+            {corpusStats.internet.toLocaleString()} Web &middot;{' '}
+            {corpusStats.studentPapers.toLocaleString()} Student
           </div>
         </div>
+      </section>
+
+      {/* Direct GitHub Raw Multi-Layer SHA-256 Verification Proof */}
+      <section className="cw-card p-5 md:p-6 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-[var(--cw-good)]" />
+              <h2 className="cw-display text-lg font-bold text-[var(--cw-ink)]">
+                Multi-Layer GitHub Cloud Shard Verification (SHA-256 &middot; 0ms Vercel CPU)
+              </h2>
+            </div>
+            <p className="text-xs text-[var(--cw-ink-2)] max-w-3xl">
+              Layer 1 stores {corpusStats.total.toLocaleString()} verified journals, seminar proceedings,
+              and theses compressed across 4 gzip-L9 shards directly in GitHub. Layer 2 queries 10
+              federated scholarly APIs (~260M+ worldwide works: OpenAlex, Crossref, DataCite, PubMed,
+              DOAJ, HAL, PLOS, Wikipedia) directly from your browser with zero Vercel server CPU.
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={verifyingGitHub}
+            onClick={() => runDirectGitHubVerification(true, true)}
+            className="cw-btn-primary text-xs !py-2 !px-3.5 shrink-0"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${verifyingGitHub ? 'animate-spin' : ''}`} />
+            <span>
+              {verifyingGitHub
+                ? 'Fetching & Hashing Shards...'
+                : 'Verify Live Direct from GitHub Raw'}
+            </span>
+          </button>
+        </div>
+
+        {cloudResult && cloudResult.verifications.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {cloudResult.verifications.map((v) => (
+              <div
+                key={v.file}
+                className="p-3.5 rounded-[8px] border border-[var(--cw-rule)] bg-[var(--cw-paper)] space-y-1.5 cw-mono text-[11px]"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-[var(--cw-ink)]">{v.file}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      v.verified
+                        ? 'bg-[var(--cw-good-wash)] text-[var(--cw-good)]'
+                        : 'bg-[var(--cw-bad-wash)] text-[var(--cw-bad)]'
+                    }`}
+                  >
+                    {v.verified ? 'SHA-256 OK' : 'MISMATCH'}
+                  </span>
+                </div>
+                <div className="text-[var(--cw-ink-2)]">
+                  {v.count.toLocaleString()} refs &middot; {(v.gzipBytes / 1024).toFixed(1)} KB gz &middot;{' '}
+                  {v.fetchMs}ms
+                </div>
+                <div className="text-[10px] text-[var(--cw-ink-3)] truncate" title={v.actualSha256}>
+                  sha256: {v.actualSha256.slice(0, 20)}...
+                </div>
+                <div className="text-[10px] text-[var(--cw-corpus-ink)]">
+                  Origin: {v.origin}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* 6 Diagnosed Defects & Fixes */}
@@ -380,7 +461,7 @@ export default function BenchmarkPage() {
         </div>
 
         <div className="max-h-[480px] overflow-y-auto divide-y divide-[var(--cw-rule)]">
-          {filteredCorpus.map((src, idx) => (
+          {filteredCorpus.slice(0, 200).map((src, idx) => (
             <div
               key={src.id}
               className="px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-[var(--cw-paper-2)]/60"

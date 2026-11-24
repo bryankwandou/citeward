@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
@@ -372,33 +373,49 @@ async function main() {
     `[PASS] 20 Samples x 500 Global Refs & 100-Page Skripsi (${h2h.skripsi100PagesWordCount}w): Legacy v1.4 MAE=${h2h.legacyV14MeanAbsoluteError}% (${h2h.legacyV14ExactPassCount}/20) -> Calibrated v2.0 MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20).`
   );
 
-  // Verify Gzip-Compressed 2,500-Reference Cloud Dataset & O(L_doc) Inverted Index Parity
-  const cloudGzPath = path.join(
-    process.cwd(),
-    'public',
-    'datasets',
-    'global-corpus-2500.min.json.gz'
-  );
-  const gzBuf = fs.readFileSync(cloudGzPath);
-  const packedCloud = JSON.parse(zlib.gunzipSync(gzBuf).toString('utf8'));
-  const cloud2500 = unpackCloudCorpus(packedCloud);
+  // Verify All 4 SHA-256 Gzip-Compressed GitHub Shards (10,000 Global References) & O(L_doc) Inverted Index Parity
+  const manifestPath = path.join(process.cwd(), 'public', 'datasets', 'manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert(
-    cloud2500.length === 2500,
-    `Expected 2,500 unpacked cloud references, got ${cloud2500.length}`
+    manifest.totalReferences === 10000 && manifest.shards.length === 4,
+    `Expected 10,000 cloud references across 4 shards, got ${manifest.totalReferences} across ${manifest.shards?.length}`
   );
+
+  const cloud10k: ReturnType<typeof unpackCloudCorpus> = [];
+  for (const s of manifest.shards) {
+    const shardPath = path.join(process.cwd(), 'public', 'datasets', 'shards', s.file);
+    const gzBuf = fs.readFileSync(shardPath);
+    const actualSha256 = crypto.createHash('sha256').update(gzBuf).digest('hex');
+    assert(
+      actualSha256 === s.sha256,
+      `SHA-256 mismatch on ${s.file}: expected ${s.sha256}, got ${actualSha256}`
+    );
+    const packedShard = JSON.parse(zlib.gunzipSync(gzBuf).toString('utf8'));
+    const unpacked = unpackCloudCorpus(packedShard);
+    assert(
+      unpacked.length === s.count,
+      `Shard ${s.file} count mismatch: expected ${s.count}, got ${unpacked.length}`
+    );
+    cloud10k.push(...unpacked);
+  }
+  assert(
+    cloud10k.length === 10000,
+    `Expected 10,000 total unpacked cloud references, got ${cloud10k.length}`
+  );
+
   const tCloudStart = Date.now();
-  const audit2500 = runManuscriptAudit(
+  const audit10k = runManuscriptAudit(
     SAMPLE_MANUSCRIPTS[0].text,
     { excludeQuotes: true, excludeBibliography: true, minWordMatch: 8 },
-    cloud2500
+    cloud10k
   );
   const cloudMs = Date.now() - tCloudStart;
   assert(
-    audit2500.overallSimilarityPercent === 41.8,
-    `Expected 41.8% parity against 2,500 cloud references, got ${audit2500.overallSimilarityPercent}%`
+    audit10k.overallSimilarityPercent === 41.8,
+    `Expected 41.8% parity against 10,000 cloud references, got ${audit10k.overallSimilarityPercent}%`
   );
   console.log(
-    `[PASS] 2,500-Reference Cloud Dataset (${(gzBuf.length / 1024).toFixed(1)} KB gzipped) & Inverted Index Audit verified (${audit2500.overallSimilarityPercent}% exact, ${cloudMs}ms first-index).`
+    `[PASS] 10,000-Reference Sharded GitHub Cloud Corpus (4/4 SHA-256 verified, ${(manifest.gzipBytes / 1024).toFixed(1)} KB gzipped) & Inverted Index Audit verified (${audit10k.overallSimilarityPercent}% exact, ${cloudMs}ms cold-index).`
   );
 }
 

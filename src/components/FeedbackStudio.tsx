@@ -18,7 +18,10 @@ import {
 } from 'lucide-react';
 import { CorpusSource, SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
 import { getHeadToHead20Samples } from '@/lib/head-to-head-benchmark';
-import { loadCloudCorpus2500 } from '@/lib/cloud-corpus-loader';
+import {
+  loadVerifiedShardedCloudCorpus,
+  ShardVerificationResult,
+} from '@/lib/cloud-corpus-loader';
 import {
   fetchLiveSourcesDirectlyFromBrowser,
   parseDocumentInBrowser,
@@ -28,6 +31,7 @@ import {
   ExclusionOptions,
   IntegrityAuditResult,
   MatchSpan,
+  prewarmInvertedIndexChunk,
   runManuscriptAudit,
 } from '@/lib/similarity-engine';
 import { scanDocumentManipulations } from '@/lib/forensics-and-ecosystem';
@@ -149,6 +153,11 @@ export function FeedbackStudio() {
   const [uploadingRefDoc, setUploadingRefDoc] = useState<boolean>(false);
 
   const [cloudSources, setCloudSources] = useState<CorpusSource[]>([]);
+  const [cloudMeta, setCloudMeta] = useState<{
+    origin: string;
+    verified: boolean;
+    shards: ShardVerificationResult[];
+  } | null>(null);
   const [extraFetchedSources, setExtraFetchedSources] = useState<CorpusSource[]>([]);
   const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
   const [scanningWeb, setScanningWeb] = useState<boolean>(false);
@@ -205,12 +214,28 @@ export function FeedbackStudio() {
     } catch { }
   }, [allCalibrationSamples]);
 
-  // Hydrate 2,500-reference gzipped cloud corpus directly from static CDN / GitHub Raw (0ms Vercel CPU)
+  // Hydrate all 4 gzipped GitHub cloud shards (10,000 refs) with SHA-256 verification and idle-chunked 60fps indexing (0ms Vercel CPU)
   useEffect(() => {
     let active = true;
-    loadCloudCorpus2500()
-      .then((loaded) => {
-        if (active && loaded.length > 0) setCloudSources(loaded);
+    loadVerifiedShardedCloudCorpus({ preferGitHubRaw: false })
+      .then((res) => {
+        if (!active || res.sources.length === 0) return;
+        setCloudMeta({
+          origin: res.origin,
+          verified: res.allSha256Verified,
+          shards: res.verifications,
+        });
+        let cursor = 0;
+        const pump = () => {
+          if (!active) return;
+          cursor = prewarmInvertedIndexChunk(res.sources, cursor, 400);
+          if (cursor < res.sources.length) {
+            setTimeout(pump, 12);
+          } else {
+            setCloudSources(res.sources);
+          }
+        };
+        pump();
       })
       .catch(() => { });
     return () => {
@@ -764,8 +789,15 @@ export function FeedbackStudio() {
 
           <div className="flex flex-wrap items-center gap-2">
             {cloudSources.length > 0 && (
-              <span className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-corpus-wash)] text-[var(--cw-corpus-ink)] font-semibold">
-                {cloudSources.length.toLocaleString()} Cloud Refs (0ms Server CPU)
+              <span
+                title={
+                  cloudMeta?.shards?.length
+                    ? `${cloudMeta.shards.length} SHA-256 verified gzip shards (${cloudMeta.origin})`
+                    : 'GitHub cloud corpus hydrated locally'
+                }
+                className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-corpus-wash)] text-[var(--cw-corpus-ink)] font-semibold"
+              >
+                {cloudSources.length.toLocaleString()} GitHub Refs · {cloudMeta?.verified ? 'SHA-256 OK' : 'Cloud'} · 0ms CPU
               </span>
             )}
             {liveStats && liveStats.totalFetched > 0 && (

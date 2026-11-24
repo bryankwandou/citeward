@@ -70,7 +70,7 @@ export default function HomePage() {
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)]/95">
               <span className="cw-pulse-dot" />
               <span className="cw-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--cw-ink-2)]">
-                500 Global References &middot; 11 Live APIs &middot; 0.0% Turnitin MAE
+                10,000 GitHub Cloud Refs &middot; 10 Direct Global APIs &middot; 0ms Vercel CPU
               </span>
             </div>
 
@@ -82,9 +82,10 @@ export default function HomePage() {
             </h1>
 
             <p className="cw-lead text-[var(--cw-ink-2)] max-w-[54ch]">
-              Upload a .PDF or .DOCX to inspect matched spans line by line, apply exact
-              quote, bibliography, post-bibliography Lampiran, and colinear patchwriting
-              rules, and benchmark against 500 stored global references plus 11 live APIs.
+              Upload a .PDF or .DOCX parsed 100% inside your browser, audit against 10,000
+              SHA-256-verified gzipped GitHub cloud references plus 10 direct federated
+              registries (260M+ global works), and inspect Turnitin-calibrated scores at
+              zero server CPU overhead.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -302,15 +303,15 @@ export default function HomePage() {
 
           <div className="cw-lift cw-reveal cw-d2 p-5 rounded-[10px] border border-[var(--cw-rule)] bg-[var(--cw-paper)] space-y-2">
             <div className="cw-mono text-xs font-bold text-[var(--cw-signal-ink)]">
-              02 · 500 Stored Refs &amp; 11 Live APIs
+              02 · 10,000 GitHub Shards &amp; 260M+ Federated APIs
             </div>
             <h2 className="text-base font-semibold text-[var(--cw-ink)]">
-              Global Multi-Repository Coverage
+              Multi-Layer SHA-256 Cloud Verification
             </h2>
             <p className="text-xs text-[var(--cw-ink-2)] leading-relaxed">
-              Ships with 500 real scholarly and encyclopedic references in GitHub alongside
-              live retrieval from Crossref, OpenAlex, DataCite, DOAJ, PLOS, HAL, arXiv,
-              PubMed, Wikipedia EN/ID, and Wikibooks ID.
+              Streams 4 gzipped GitHub shards (10,000 journals, seminars, and theses) verified
+              via WebCrypto SHA-256 alongside browser-direct OpenAlex, Crossref, DataCite,
+              DOAJ, PLOS, HAL, PubMed, and Wikipedia queries at 0ms Vercel Active CPU.
             </p>
           </div>
 

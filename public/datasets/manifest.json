@@ -1,16 +1,127 @@
 {
-  "version": "2.2",
-  "generatedAt": "2026-11-24T11:34:04.612Z",
-  "totalReferences": 2500,
+  "version": "3.0",
+  "generatedAt": "2026-11-24T16:14:25.882Z",
+  "totalReferences": 10000,
+  "shardCount": 4,
   "categories": {
-    "publications": 1537,
+    "publications": 8018,
     "internet": 169,
-    "student_papers": 794
+    "student_papers": 1813
   },
-  "repositoriesCount": 30,
-  "rawBytes": 2351490,
-  "gzipBytes": 787149,
-  "compressionRatioPercent": 66.5,
-  "cdnPath": "/datasets/global-corpus-2500.min.json.gz",
-  "githubRawMirror": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/global-corpus-2500.min.json.gz"
+  "repositoriesCount": 33,
+  "repositories": [
+    "ACM Digital Library / Crossref",
+    "IEEE Xplore / OpenAlex",
+    "arXiv Open Access",
+    "Open Web Archive",
+    "Crossref / OpenAlex",
+    "ACL Anthology / Semantic Scholar",
+    "Open Student Thesis Repository",
+    "OpenAlex / Crossref",
+    "Crossref Scholarly Index",
+    "Indonesian Academic Reference Corpus",
+    "Garuda / Crossref Index",
+    "DOAJ / Neliti Open Access",
+    "Garuda / Crossref Scholarly Index",
+    "Crossref / OpenAlex Textbook Index",
+    "Student Papers Coursework Archive",
+    "DOAJ / Garuda Open Access",
+    "PLOS / PubMed Central Open Access",
+    "HAL Open Archive (CNRS)",
+    "DOAJ / Crossref Indonesia",
+    "DataCite / Institutional Thesis Archive",
+    "DataCite / OSF Preprints",
+    "Crossref / Garuda Open Access",
+    "Indonesian ETD Student Paper Archive",
+    "Crossref / Taylor & Francis Index",
+    "Crossref Global Registry",
+    "Directory of Open Access Journals (DOAJ)",
+    "DataCite / OSF / Institutional Repository",
+    "Wikipedia EN Live Archive",
+    "Wikipedia ID Live Archive",
+    "PLOS Open Access Corpus",
+    "Crossref Global Journal Registry",
+    "Crossref Conference & Seminar Proceedings",
+    "HAL Proceedings & Seminars"
+  ],
+  "rawBytes": 8208547,
+  "gzipBytes": 2770084,
+  "compressionRatioPercent": 66.3,
+  "federatedLiveRegistries": [
+    {
+      "name": "OpenAlex Global Scholarly Graph",
+      "coverage": "260M+ works"
+    },
+    {
+      "name": "Crossref Global DOI & Seminars",
+      "coverage": "160M+ DOIs"
+    },
+    {
+      "name": "DataCite Institutional & Thesis Repos",
+      "coverage": "65M+ DOIs"
+    },
+    {
+      "name": "PubMed / MEDLINE Biomedical Index",
+      "coverage": "38M+ citations"
+    },
+    {
+      "name": "DOAJ Open Access Journals",
+      "coverage": "11M+ articles"
+    },
+    {
+      "name": "HAL Open Archive (CNRS) & Theses",
+      "coverage": "3.5M+ documents"
+    },
+    {
+      "name": "PLOS Open Access Peer-Reviewed Corpus",
+      "coverage": "350K+ full articles"
+    },
+    {
+      "name": "Wikipedia EN / ID & Wikibooks Live",
+      "coverage": "7M+ encyclopedic articles"
+    }
+  ],
+  "githubManifestUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/manifest.json",
+  "shards": [
+    {
+      "shard": 1,
+      "file": "shard-01.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2351500,
+      "gzipBytes": 787157,
+      "sha256": "39dfccb0d7c7c535b7856ba42dcfa47c9452248a27c2a56ce5a6f4ac5b0e28c0",
+      "cdnPath": "/datasets/shards/shard-01.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-01.min.json.gz"
+    },
+    {
+      "shard": 2,
+      "file": "shard-02.min.json.gz",
+      "count": 2500,
+      "rawBytes": 1889052,
+      "gzipBytes": 654105,
+      "sha256": "99d343f6a41c90a8ef72feefe39b20467e09370655df1c0c494c03b39a05f252",
+      "cdnPath": "/datasets/shards/shard-02.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-02.min.json.gz"
+    },
+    {
+      "shard": 3,
+      "file": "shard-03.min.json.gz",
+      "count": 2500,
+      "rawBytes": 1947809,
+      "gzipBytes": 680927,
+      "sha256": "3a07b16f158ac281bb9dc2dab60697091e0bf7383374acad2025aa8641eaeebd",
+      "cdnPath": "/datasets/shards/shard-03.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-03.min.json.gz"
+    },
+    {
+      "shard": 4,
+      "file": "shard-04.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2020186,
+      "gzipBytes": 647895,
+      "sha256": "262612843657a73a730c02ab9a5d38970a4fba22f5702469d8f7c840b61281e7",
+      "cdnPath": "/datasets/shards/shard-04.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-04.min.json.gz"
+    }
+  ]
 }

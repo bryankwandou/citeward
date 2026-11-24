@@ -487,6 +487,26 @@ function getSourceIndex(source: CorpusSource): CachedSourceIndex {
 }
 
 /**
+ * Incrementally registers cloud corpus sources into the O(1) inverted trigram/bigram index
+ * in small non-blocking slices so browser UI stays at 60fps across 10,000+ references.
+ */
+export function prewarmInvertedIndexChunk(
+  sources: CorpusSource[],
+  startIdx: number,
+  chunkSize = 250
+): number {
+  const end = Math.min(sources.length, startIdx + chunkSize);
+  for (let i = startIdx; i < end; i++) {
+    const src = sources[i];
+    const k = getSourceCacheKey(src);
+    if (!INVERTED_INDEXED_KEYS.has(k)) {
+      getSourceIndex(src);
+    }
+  }
+  return end;
+}
+
+/**
  * Aligns manuscript tokens against a candidate source using 3-word shingle indexing,
  * colinear 2-gram patchwriting alignment, intra-sentence gap bridging, and
  * partial-quote / partial-bibliography sub-span splitting.

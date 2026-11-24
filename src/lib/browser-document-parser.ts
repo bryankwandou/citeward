@@ -712,6 +712,128 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
       })()
     );
 
+    // 6. OpenAlex Global Scholarly Graph (260M+ works, CORS enabled)
+    tasks.push(
+      (async () => {
+        try {
+          const r = await fetch(
+            `https://api.openalex.org/works?search=${encodeURIComponent(qPrimary.slice(0, 90))}&per-page=5&select=id,doi,title,publication_year,authorships,primary_location,abstract_inverted_index`,
+            { signal: AbortSignal.timeout(5500) }
+          );
+          if (!r.ok) return;
+          const j = await r.json();
+          const items = j?.results || [];
+          let added = 0;
+          for (const it of items) {
+            const inv = it.abstract_inverted_index as Record<string, number[]> | undefined;
+            if (!inv) continue;
+            const words: string[] = [];
+            for (const [word, positions] of Object.entries(inv)) {
+              for (const pos of positions) words[pos] = word;
+            }
+            const abs = cleanSnippet(words.filter(Boolean).join(' '));
+            if (abs.length < 40) continue;
+            added++;
+            sources.push({
+              id: `live-oa-${String(it.id || added).split('/').pop()}`,
+              title: cleanSnippet(it.title || 'OpenAlex Work'),
+              authors:
+                (it.authorships || [])
+                  .slice(0, 3)
+                  .map((a: { author?: { display_name?: string } }) => a.author?.display_name)
+                  .filter(Boolean)
+                  .join(', ') || 'OpenAlex Authors',
+              publication: cleanSnippet(
+                it.primary_location?.source?.display_name || 'OpenAlex Scholarly Index'
+              ),
+              year: Number(it.publication_year) || 2024,
+              url: it.doi || it.id || 'https://openalex.org',
+              doi: it.doi ? String(it.doi).replace(/^https?:\/\/doi\.org\//i, '') : undefined,
+              category: 'publications',
+              repository: 'OpenAlex Global Graph (260M+)',
+              text: abs.slice(0, 1200),
+            });
+          }
+          if (added > 0) apisSucceeded.add('OpenAlex');
+        } catch {}
+      })()
+    );
+
+    // 7. PLOS Open Access Peer-Reviewed Corpus (CORS enabled)
+    tasks.push(
+      (async () => {
+        try {
+          const r = await fetch(
+            `https://api.plos.org/search?q=${encodeURIComponent(qPrimary.slice(0, 90))}&fl=id,title_display,author_display,journal,publication_date,abstract&wt=json&rows=5`,
+            { signal: AbortSignal.timeout(5500) }
+          );
+          if (!r.ok) return;
+          const j = await r.json();
+          const docs = j?.response?.docs || [];
+          if (docs.length > 0) apisSucceeded.add('PLOS');
+          for (const d of docs) {
+            const abs = cleanSnippet(Array.isArray(d.abstract) ? d.abstract.join(' ') : d.abstract);
+            if (abs.length < 40) continue;
+            sources.push({
+              id: `live-plos-${String(d.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+              title: cleanSnippet(d.title_display || 'PLOS Article'),
+              authors: (d.author_display || []).slice(0, 3).join(', ') || 'PLOS Authors',
+              publication: cleanSnippet(d.journal || 'PLOS ONE'),
+              year: Number(String(d.publication_date || '2024').slice(0, 4)) || 2024,
+              url: `https://doi.org/${d.id}`,
+              doi: d.id,
+              category: 'publications',
+              repository: 'PLOS Open Access Live',
+              text: abs.slice(0, 1200),
+            });
+          }
+        } catch {}
+      })()
+    );
+
+    // 8. PubMed / MEDLINE Biomedical Index (38M+ citations, CORS enabled)
+    tasks.push(
+      (async () => {
+        try {
+          const sr = await fetch(
+            `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&term=${encodeURIComponent(qPrimary.slice(0, 80))}`,
+            { signal: AbortSignal.timeout(5000) }
+          );
+          if (!sr.ok) return;
+          const sj = await sr.json();
+          const ids: string[] = sj?.esearchresult?.idlist || [];
+          if (!ids.length) return;
+          const sm = await fetch(
+            `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=${ids.join(',')}`,
+            { signal: AbortSignal.timeout(5000) }
+          );
+          if (!sm.ok) return;
+          const smj = await sm.json();
+          apisSucceeded.add('PubMed');
+          for (const pmid of ids) {
+            const rec = smj?.result?.[pmid];
+            if (!rec?.title) continue;
+            sources.push({
+              id: `live-pm-${pmid}`,
+              title: cleanSnippet(rec.title),
+              authors:
+                (rec.authors || [])
+                  .slice(0, 3)
+                  .map((a: { name?: string }) => a.name)
+                  .filter(Boolean)
+                  .join(', ') || 'PubMed Authors',
+              publication: cleanSnippet(rec.fulljournalname || rec.source || 'PubMed MEDLINE'),
+              year: Number(String(rec.pubdate || '2024').slice(0, 4)) || 2024,
+              url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
+              category: 'publications',
+              repository: 'PubMed / MEDLINE Live',
+              text: cleanSnippet(`${rec.title} ${rec.fulljournalname || ''}`),
+            });
+          }
+        } catch {}
+      })()
+    );
+
     const shortWikiQ = qPrimary.split(/\s+/).slice(0, 4).join(' ');
     for (const lang of ['en', 'id'] as const) {
       tasks.push(
