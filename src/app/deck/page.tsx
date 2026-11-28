@@ -163,7 +163,7 @@ export default function DeckPage() {
                   Live Scholarly API Indexing
                 </th>
                 <td className="p-3.5 font-semibold text-[var(--cw-good)]">
-                  268,629 World Journals (100% GitHub) + 30,000 Abstract Shards + 10 Direct CORS APIs
+                  268,629 World Journals (100% GitHub) + 35,000 Abstract Shards + 10 Direct CORS APIs
                 </td>
                 <td className="p-3.5">Closed Subscription Vault</td>
                 <td className="p-3.5">Local cohort batch only</td>

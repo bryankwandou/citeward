@@ -350,8 +350,8 @@ export default function BenchmarkPage() {
               <RefreshCw className={`w-3.5 h-3.5 ${verifyingGitHub ? 'animate-spin' : ''}`} />
               <span>
                 {loadingAllJournalShards
-                  ? `Verifying Shards Live from GitHub (${combinedVerifications.length}/18)...`
-                  : 'Verify All 18 Shards Live Direct from GitHub Raw'}
+                  ? `Verifying Shards Live from GitHub (${combinedVerifications.length}/20)...`
+                  : 'Verify All 20 Shards Live Direct from GitHub Raw'}
               </span>
             </button>
           </div>
@@ -385,7 +385,7 @@ export default function BenchmarkPage() {
             <p className="text-[11px] text-[var(--cw-ink-2)] leading-relaxed">
               {cloudResult?.manifest
                 ? `${cloudResult.manifest.shardCount} SHA-256 gzip shards (${(cloudResult.manifest.gzipBytes / 1048576).toFixed(2)} MB total) hydrated into the browser Tier-A FNV-1a inverted index for Rabin-Karp Winnowing and colinear 2-gram patchwriting alignment.`
-                : '12 SHA-256 gzip shards hydrated directly from GitHub Raw into the browser Tier-A FNV-1a inverted index.'}
+                : '14 SHA-256 gzip shards hydrated directly from GitHub Raw into the browser Tier-A FNV-1a inverted index.'}
             </p>
           </div>
 
@@ -693,7 +693,7 @@ export default function BenchmarkPage() {
             </div>
             <p className="text-xs text-[var(--cw-ink-3)]">
               Harvested from Crossref, DOAJ, PLOS, HAL Open Archive, DataCite, ACM/IEEE/arXiv,
-              Garuda/ETD, and Wikipedia EN/ID across {cloudResult?.manifest?.shardCount ?? 12} gzip-L9 shards.
+              Garuda/ETD, and Wikipedia EN/ID across {cloudResult?.manifest?.shardCount ?? 14} gzip-L9 shards.
             </p>
           </div>
 

@@ -512,7 +512,8 @@ export function FeedbackStudio() {
         throw new Error('Could not extract readable text from the uploaded file.');
       }
 
-      const newId = `upload-${Date.now()}`;
+      const seq = refSeqRef.current++;
+      const newId = `upload-${seq}`;
       const newTitle = parsed.extractedTitle || file.name.replace(/\.[^.]+$/, '');
       const newAuthor = `Uploaded ${String(parsed.fileType).toUpperCase()} File`;
       setSelectedSampleId(newId);
@@ -539,7 +540,7 @@ export function FeedbackStudio() {
       setUploadedInboxItems((prev) => [
         {
           id: newId,
-          paperId: `CW-${Math.floor(2000 + (Date.now() % 7999))}`,
+          paperId: `CW-${2000 + seq}`,
           title: newTitle,
           author: newAuthor,
           course: `Uploaded ${String(parsed.fileType).toUpperCase()}`,
@@ -559,6 +560,41 @@ export function FeedbackStudio() {
         wordCount: parsed.wordCount,
       });
       setViewerLayer('similarity');
+
+      // Automatically trigger zero-CPU browser-direct multi-chapter + Daftar Pustaka live scan in background
+      setScanningWeb(true);
+      fetchLiveSourcesDirectlyFromBrowser(parsed.text)
+        .then((direct) => {
+          if (direct.sources.length === 0) return;
+          setExtraFetchedSources(direct.sources);
+          setLiveStats({
+            totalFetched: direct.sources.length,
+            apisSucceeded: direct.apisSucceeded,
+            doisResolved: direct.doisResolved,
+            urlsResolved: 0,
+          });
+          const liveAudit = runManuscriptAudit(
+            parsed!.text,
+            {
+              excludeQuotes: true,
+              excludeBibliography: true,
+              minWordMatch: 8,
+              minPercentMatch: 0,
+            },
+            [...cloudSources, ...direct.sources]
+          );
+          setUploadedInboxItems((prev) =>
+            prev.map((item) =>
+              item.id === newId
+                ? { ...item, simPct: liveAudit.overallSimilarityPercent }
+                : item
+            )
+          );
+        })
+        .catch(() => {})
+        .finally(() => {
+          setScanningWeb(false);
+        });
     } catch (err) {
       setUploadError(
         err instanceof Error

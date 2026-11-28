@@ -194,6 +194,48 @@ async function main() {
     `[PASS] Binary .DOCX (${parsedDocx.wordCount}w, Sim=${docxAudit.overallSimilarityPercent}%) & .PDF (${parsedPdf.wordCount}w + Identity-H CMap) upload extraction verified.`
   );
 
+  // Verify double-spaced (24pt Td) Indonesian Tugas Akhir PDF unwraps lines cleanly without false 93% AI spike or fragmented matches
+  const pdfWrappedLines = [
+    'Usulan/Proposal Tugas Akhir',
+    'PENERAPAN SISTEM AGENTIC ARTIFICIAL INTELLIGENCE UNTUK KLASIFIKASI KELAYAKAN FINTECH',
+    'Bab I Pendahuluan',
+    'Digital documents are easily copied and',
+    'modified, making accurate detection of partial',
+    'copies essential for academic integrity and copyright enforcement.',
+    'Dalam studi kasus pembiayaan UMKM (Suryani, 2023), evaluasi risiko kredit mencatat akurasi 84.2% pada 420 sampel nasabah.',
+    'Berbeda dengan pendekatan heuristik sebelumnya, penggabungan fitur arus kas bulanan memperkecil rasio gagal bayar sebesar 11.4% selama kuartal ketiga [1].',
+    'Pertanyaan utama yang muncul adalah sejauh mana variabel keterlambatan historis memengaruhi keputusan persetujuan otomatis di cabang daerah.',
+    'Analisis distribusi kuartil memperlihatkan variasi panjang kalimat empiris beserta bukti kuantitatif lapangan.',
+  ];
+  const doubleSpacedPdfStream = zlib.deflateSync(
+    Buffer.from(
+      'BT /F1 12 Tf 72 720 Td ' +
+        pdfWrappedLines
+          .map((ln, idx) => `${idx === 0 ? '' : '0 -24 Td '}(${ln.replace(/[()\\]/g, '\\$&')}) Tj`)
+          .join(' ') +
+        ' ET',
+      'latin1'
+    )
+  );
+  const doubleSpacedPdfBuf = Buffer.concat([
+    Buffer.from('%PDF-1.7\n1 0 obj << /Type /Page /Filter /FlateDecode >> stream\n', 'latin1'),
+    doubleSpacedPdfStream,
+    Buffer.from('\nendstream\nendobj\n%%EOF', 'latin1'),
+  ]);
+  const parsedDoubleSpaced = parseDocumentBuffer('usulan-ta-2x-spaced.pdf', doubleSpacedPdfBuf);
+  const unwrappedAudit = runManuscriptAudit(parsedDoubleSpaced.text, {
+    excludeQuotes: true,
+    excludeBibliography: true,
+    minWordMatch: 8,
+  });
+  assert(
+    unwrappedAudit.matchedWords >= 12 && unwrappedAudit.stylometry.overallAiPercent <= 35,
+    `Expected double-spaced Thesis PDF to unwrap cross-line matches (>=12w, got ${unwrappedAudit.matchedWords}w) and stay human (<=35% AI, got ${unwrappedAudit.stylometry.overallAiPercent}%)`
+  );
+  console.log(
+    `[PASS] Double-Spaced 24pt Thesis PDF Regression: ${unwrappedAudit.matchedWords}w unwrapped match, AI=${unwrappedAudit.stylometry.overallAiPercent}% (Profile=${unwrappedAudit.stylometry.forensicSignals?.detectedProfile}).`
+  );
+
   console.log('=== 6. Verifying Exact 0.0% Turnitin Parity Across All 5 Samples, Per-Source Union & DOI Query Extraction ===');
   for (const sample of SAMPLE_MANUSCRIPTS) {
     const rawAudit = runManuscriptAudit(sample.text, {
@@ -376,15 +418,15 @@ async function main() {
     `[PASS] 20 Samples x 500 Global Refs & 100-Page Skripsi (${h2h.skripsi100PagesWordCount}w): Legacy v1.4 MAE=${h2h.legacyV14MeanAbsoluteError}% (${h2h.legacyV14ExactPassCount}/20) -> Calibrated v2.0 MAE=${h2h.calibratedV20MeanAbsoluteError}% (${h2h.calibratedV20ExactPassCount}/20).`
   );
 
-  // Verify All 12 SHA-256 Gzip-Compressed GitHub Shards (30,000 Global References) & Tier-A Inverted Index Parity
+  // Verify All 14 SHA-256 Gzip-Compressed GitHub Shards (35,000 Global References) & Tier-A Inverted Index Parity
   const manifestPath = path.join(process.cwd(), 'public', 'datasets', 'manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert(
-    manifest.totalReferences === 30000 && manifest.shards.length === 12,
-    `Expected 30,000 cloud references across 12 shards, got ${manifest.totalReferences} across ${manifest.shards?.length}`
+    manifest.totalReferences === 35000 && manifest.shards.length === 14,
+    `Expected 35,000 cloud references across 14 shards, got ${manifest.totalReferences} across ${manifest.shards?.length}`
   );
 
-  const cloud30k: ReturnType<typeof unpackCloudCorpus> = [];
+  const cloud35k: ReturnType<typeof unpackCloudCorpus> = [];
   for (const s of manifest.shards) {
     const shardPath = path.join(process.cwd(), 'public', 'datasets', 'shards', s.file);
     const gzBuf = fs.readFileSync(shardPath);
@@ -399,26 +441,26 @@ async function main() {
       unpacked.length === s.count,
       `Shard ${s.file} count mismatch: expected ${s.count}, got ${unpacked.length}`
     );
-    cloud30k.push(...unpacked);
+    cloud35k.push(...unpacked);
   }
   assert(
-    cloud30k.length === 30000,
-    `Expected 30,000 total unpacked cloud references, got ${cloud30k.length}`
+    cloud35k.length === 35000,
+    `Expected 35,000 total unpacked cloud references, got ${cloud35k.length}`
   );
 
   const tCloudStart = performance.now();
-  const audit30k = runManuscriptAudit(
+  const audit35k = runManuscriptAudit(
     SAMPLE_MANUSCRIPTS[0].text,
     { excludeQuotes: true, excludeBibliography: true, minWordMatch: 8 },
-    cloud30k
+    cloud35k
   );
   const cloudMs = Math.round(performance.now() - tCloudStart);
   assert(
-    audit30k.overallSimilarityPercent === 41.8,
-    `Expected 41.8% parity against 30,000 cloud references, got ${audit30k.overallSimilarityPercent}%`
+    audit35k.overallSimilarityPercent === 41.8,
+    `Expected 41.8% parity against 35,000 cloud references, got ${audit35k.overallSimilarityPercent}%`
   );
   console.log(
-    `[PASS] 30,000-Reference Sharded GitHub Cloud Corpus (12/12 SHA-256 verified, ${(manifest.gzipBytes / 1048576).toFixed(2)} MB gzipped) & Tier-A Inverted Index Audit verified (${audit30k.overallSimilarityPercent}% exact, ${cloudMs}ms cold-index).`
+    `[PASS] 35,000-Reference Sharded GitHub Cloud Corpus (14/14 SHA-256 verified, ${(manifest.gzipBytes / 1048576).toFixed(2)} MB gzipped) & Tier-A Inverted Index Audit verified (${audit35k.overallSimilarityPercent}% exact, ${cloudMs}ms cold-index).`
   );
 
   // Verify Worldwide Journal & Seminar GitHub Registry (>= 99.1% Global Coverage, 6/6 SHA-256 Shards)

@@ -1,12 +1,12 @@
 {
-  "version": "4.0",
-  "generatedAt": "2026-11-28T06:13:09.000Z",
-  "totalReferences": 30000,
-  "shardCount": 12,
+  "version": "5.0",
+  "generatedAt": "2026-11-28T06:31:29.000Z",
+  "totalReferences": 35000,
+  "shardCount": 14,
   "categories": {
-    "publications": 27419,
+    "publications": 32399,
     "internet": 169,
-    "student_papers": 2412
+    "student_papers": 2432
   },
   "repositoriesCount": 34,
   "repositories": [
@@ -45,8 +45,8 @@
     "HAL Proceedings & Seminars",
     "HAL Theses & Dissertations (CNRS)"
   ],
-  "rawBytes": 27164471,
-  "gzipBytes": 9183327,
+  "rawBytes": 32313407,
+  "gzipBytes": 10907941,
   "compressionRatioPercent": 66.2,
   "federatedLiveRegistries": [
     {
@@ -203,6 +203,26 @@
       "sha256": "c58872483cc6d187de2c8934971e76e546c078456993a7ffba75a83745f7b0eb",
       "cdnPath": "/datasets/shards/shard-12.min.json.gz",
       "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-12.min.json.gz"
+    },
+    {
+      "shard": 13,
+      "file": "shard-13.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2564794,
+      "gzipBytes": 885635,
+      "sha256": "5ac2882adb5d2d604d766ae24509928fdb0b1cecf87b3081edb3bfb5413d5539",
+      "cdnPath": "/datasets/shards/shard-13.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-13.min.json.gz"
+    },
+    {
+      "shard": 14,
+      "file": "shard-14.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2584142,
+      "gzipBytes": 838979,
+      "sha256": "c9ada5a5d6087443901ced293cf6cb804c61a805178fe10b7b55ff784dd61393",
+      "cdnPath": "/datasets/shards/shard-14.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-14.min.json.gz"
     }
   ]
 }

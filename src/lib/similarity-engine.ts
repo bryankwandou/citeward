@@ -158,6 +158,14 @@ const FORMULAIC_MARKERS: string[] = [
   'secara komprehensif dan mendalam',
   'secara holistik',
   'berbagai pemangku kepentingan',
+  'dalam lanskap',
+  'memainkan peran krusial',
+  'memegang peranan krusial',
+  'menjadi tulang punggung',
+  'di era transformasi digital',
+  'pendekatan yang holistik',
+  'memberikan wawasan mendalam',
+  'menjembatani kesenjangan',
   'memberikan kontribusi yang signifikan',
   'menjadi landasan utama',
   'sejalan dengan hal tersebut',
@@ -634,14 +642,28 @@ function alignSourceSpans(
     }
   }
 
-  // Helper: check if a sentence boundary (., !, ?, newline, or [N] reference bracket) exists between two tokens.
-  // Inside bibliography/reference blocks, only break on newlines or [N] entries so "Title. Proceedings of ..." aligns intact.
+  // Helper: check if a sentence boundary exists between two tokens.
+  // Inside bibliography/reference blocks, break on newlines or [N] entries.
+  // In body prose, ignore single soft PDF line wraps without sentence punctuation so 1.5x/2.0x spaced PDFs match intact across lines.
   const hasSentenceBoundary = (idxA: number, idxB: number): boolean => {
     const between = docText.slice(docTokens[idxA].end, docTokens[idxB].start);
     if (docTokens[idxA].inBibliography && docTokens[idxB].inBibliography) {
       return /[\r\n]|\[\s*\d+\s*\]/.test(between);
     }
-    return /[.!?\r\n]|\[\s*\d+\s*\]/.test(between);
+    if (/[.!?;]|\[\s*\d+\s*\]/.test(between)) {
+      return true;
+    }
+    if (/\r?\n\s*\r?\n/.test(between)) {
+      const prevTail = docText.slice(Math.max(0, docTokens[idxA].start), docTokens[idxA].end + 2);
+      const nextRaw = docTokens[idxB].raw || '';
+      const endsWithStopOrColon = /[.!?;:"”)]$/.test(prevTail.trim());
+      const startsHeadingLike =
+        /^(?:BAB|CHAPTER|SECTION|ABSTRACT|ABSTRAK|DAFTAR|REFERENCES|LAMPIRAN|APPENDIX|\d+(?:\.\d+)+)$/i.test(
+          nextRaw
+        ) || (nextRaw.length >= 3 && nextRaw === nextRaw.toUpperCase() && /[A-Z]/.test(nextRaw));
+      return endsWithStopOrColon || startsHeadingLike;
+    }
+    return false;
   };
 
   // Colinear 2-gram patchwriting alignment within the same sentence (detects synonym swaps every 2-3 words)
@@ -869,7 +891,31 @@ const NARRATIVE_LLM_BEATS_REGEX =
  */
 export function evaluateStylometry(text: string): StylometricReport {
   const bibStart = findBibliographyStart(text);
-  const rawBodyText = text.slice(0, bibStart).trim() || text;
+  const rawBodyFull = text.slice(0, bibStart).trim() || text;
+
+  // Filter non-prose front-matter, TOC dot-leaders, figure/table captions, and standalone ALL-CAPS headers
+  const cleanedRawLines = rawBodyFull.split(/\r?\n/).filter((line) => {
+    const t = line.trim();
+    if (!t) return true;
+    if (/\.{4,}\s*\d+\s*$/.test(t)) return false;
+    if (/^(?:Tabel|Gambar|Table|Figure|Lampiran)\s+\d+(?:\.\d+)*/i.test(t) && t.length < 95) {
+      return false;
+    }
+    if (
+      /^(?:Usulan\/Proposal|Proposal\s+Tugas\s+Akhir|Laporan\s+Tugas\s+Akhir|Skripsi|Tesis|Disertasi|NIM\b|NPM\b|NRP\b|Program\s+Studi|Fakultas|Universitas|Jurusan|Departemen|Oleh\s*:|Diajukan\s+untuk)/i.test(
+        t
+      ) &&
+      t.length < 110
+    ) {
+      return false;
+    }
+    const lineWords = t.match(/[\p{L}\p{N}]+/gu) || [];
+    if (lineWords.length > 0 && lineWords.length <= 14 && t === t.toUpperCase() && /[A-Z]/.test(t) && !/[.!?]$/.test(t)) {
+      return false;
+    }
+    return true;
+  });
+  const rawBodyText = cleanedRawLines.join('\n').trim() || rawBodyFull;
 
   // Unwrap mid-sentence PDF line breaks (lines that do not end with sentence punctuation and are not headings)
   const bodyLines = rawBodyText.split(/\r?\n/);
@@ -881,7 +927,7 @@ export function evaluateStylometry(text: string): StylometricReport {
       continue;
     }
     const isHeading =
-      /^(?:===\s*HALAMAN|BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup)/i.test(
+      /^(?:===\s*HALAMAN|BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metodologi\s+Penelitian|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup)/i.test(
         trimmedLine
       ) && trimmedLine.length < 85;
 
@@ -895,6 +941,8 @@ export function evaluateStylometry(text: string): StylometricReport {
   }
 
   const bodyText = unwrappedBody.trim() || rawBodyText;
+  const isIndonesianProse =
+    /\b(?:yang|dan|pada|dalam|untuk|dengan|penelitian|sistem|metode|data|hasil)\b/i.test(bodyText);
 
   // 1. Pre-scan ALL sentences (including 1-5 word staccato fragments) & paragraphs for narrative/staccato LLM cadence
   const rawParagraphs = rawBodyText
@@ -1010,10 +1058,12 @@ export function evaluateStylometry(text: string): StylometricReport {
   const narrativeBeatDensity =
     totalAllSents >= 4 ? narrativeBeatCount / totalAllSents : 0;
 
-  // Determine whether document uses staccato/dialogue LLM narrative style (if so, keep 1-5w staccato fragments in sentences[])
+  // Determine whether document uses genuine staccato/dialogue LLM narrative style
+  // Requires narrative/dialogue beat evidence so structured academic theses/tables do not trigger fiction boosts
   const isStaccatoNarrativeCandidate =
-    (staccatoFragmentRatio >= 0.28 && staccatoClusterRatio >= 0.14) ||
-    (microParagraphRatio >= 0.55 && narrativeBeatCount >= 2);
+    narrativeBeatCount >= 2 &&
+    ((staccatoFragmentRatio >= 0.28 && staccatoClusterRatio >= 0.14) ||
+      microParagraphRatio >= 0.55);
 
   const rawSentences = isStaccatoNarrativeCandidate
     ? allSentEntries
@@ -1109,28 +1159,36 @@ export function evaluateStylometry(text: string): StylometricReport {
     }
   }
 
-  // Document-level Multi-Genre Narrative / Staccato AI Calibration Boost (zero effect on normal empirical human prose)
+  // Document-level Multi-Genre Narrative / Staccato AI Calibration Boost
+  // Strictly gated on narrativeBeatCount >= 2 so formal academic theses are never misclassified as staccato fiction
+  const hasNarrativeEvidence = narrativeBeatCount >= 2;
   const staccatoBoost =
-    staccatoFragmentRatio >= 0.40 && staccatoClusterRatio >= 0.25
+    hasNarrativeEvidence && staccatoFragmentRatio >= 0.40 && staccatoClusterRatio >= 0.25
       ? 34
-      : staccatoFragmentRatio >= 0.28 && staccatoClusterRatio >= 0.14
+      : hasNarrativeEvidence && staccatoFragmentRatio >= 0.28 && staccatoClusterRatio >= 0.14
         ? 22
         : 0;
   const microParaBoost =
-    microParagraphRatio >= 0.65 ? 20 : microParagraphRatio >= 0.48 ? 12 : 0;
+    hasNarrativeEvidence && microParagraphRatio >= 0.65
+      ? 20
+      : hasNarrativeEvidence && microParagraphRatio >= 0.48
+        ? 12
+        : 0;
   const dialogueBeatBoost =
-    narrativeBeatDensity >= 0.16 && narrativeBeatCount >= 2
+    hasNarrativeEvidence && narrativeBeatDensity >= 0.16
       ? 18
-      : narrativeBeatDensity >= 0.08 && narrativeBeatCount >= 2
+      : hasNarrativeEvidence && narrativeBeatDensity >= 0.08
         ? 10
         : 0;
   const lexicalEchoBoost =
-    (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0) &&
+    hasNarrativeEvidence &&
+      (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0) &&
       ((mattr50 > 0 && mattr50 < 0.76) || lexicalEchoRatio >= 0.16)
       ? 14
       : 0;
   const macroLongPdfBoost =
-    allWords.length >= 1500 &&
+    hasNarrativeEvidence &&
+      allWords.length >= 1500 &&
       macroChunkStability >= 70 &&
       (staccatoBoost > 0 || microParaBoost > 0 || dialogueBeatBoost > 0)
       ? 10
@@ -1207,16 +1265,34 @@ export function evaluateStylometry(text: string): StylometricReport {
     const inUniformBand = wordCount >= 14 && wordCount <= 26;
     // 2. Low burstiness penalty (global or local 5-sentence window)
     const lowBurstinessPenalty =
-      effectiveCv < 0.22 ? 26 : effectiveCv < 0.34 ? 14 : effectiveCv < 0.42 ? 6 : 0;
+      effectiveCv < 0.16 ? 26 : effectiveCv < 0.24 ? 14 : effectiveCv < 0.34 ? 6 : 0;
     // 3. Formulaic discourse marker hits
     const markerScore =
       hits.filter((h) => h !== 'staccato/narrative AI cadence').length * 32;
-    // 4. Abstract academic nominalization & word length
+    // 4. Abstract academic nominalization & language-calibrated word length + citation empirical grounding
     const hasDigits = /\d/.test(s.text);
     const hasQuestion = /\?/.test(s.text);
+    const hasAcademicCitation =
+      /\([A-Z][A-Za-z\s&.,-]{1,40},\s*\d{4}[a-z]?\)/.test(s.text) ||
+      /\[\d+(?:\s*[,–-]\s*\d+)*\]/.test(s.text);
+    const longWordThreshold = isIndonesianProse ? 7.3 : 5.9;
+    const nominalThreshold = isIndonesianProse ? 0.22 : 0.14;
     const abstractAcademicPenalty =
-      (avgWordLength > 5.9 && !hasDigits ? 18 : 0) + (nominalDensity >= 0.14 ? 12 : 0);
-    const concreteBonus = (hasDigits ? -16 : 0) + (hasQuestion ? -14 : 0);
+      (avgWordLength > longWordThreshold && !hasDigits ? 18 : 0) +
+      (nominalDensity >= nominalThreshold ? 12 : 0);
+    const richLexiconBonus =
+      hits.length === 0 && narrativeAiDocBoost === 0
+        ? mattr50 >= 0.84
+          ? -14
+          : mattr50 >= 0.78
+            ? -10
+            : 0
+        : 0;
+    const concreteBonus =
+      (hasDigits ? -16 : 0) +
+      (hasQuestion ? -14 : 0) +
+      (hasAcademicCitation ? -10 : 0) +
+      richLexiconBonus;
 
     // 5. Narrative / staccato AI sentence reinforcement (active only when document exhibits multi-signal narrative AI rhythm)
     const sentenceStaccatoReinforce =

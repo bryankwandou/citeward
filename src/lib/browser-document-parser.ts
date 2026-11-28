@@ -4,14 +4,105 @@ function extractBrowserCitedDois(text: string): string[] {
   const matches = text.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/g) || [];
   return Array.from(
     new Set(matches.map((m) => m.replace(/[.,;)\]]+$/, '')))
-  ).slice(0, 3);
+  ).slice(0, 18);
 }
 
-function extractBrowserPrimaryQuery(text: string): string {
-  const clean = text.replace(/\s+/g, ' ').trim();
-  if (!clean) return '';
-  const words = clean.match(/[\p{L}\p{N}]{4,}/gu) || [];
-  return words.slice(0, 12).join(' ');
+const BROWSER_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'that', 'this', 'with', 'from', 'are', 'was', 'were',
+  'have', 'has', 'had', 'into', 'over', 'such', 'than', 'then', 'they', 'their',
+  'there', 'these', 'those', 'which', 'while', 'using', 'used', 'between',
+  'study', 'paper', 'research', 'analysis', 'results', 'based', 'method', 'system',
+  'yang', 'dan', 'untuk', 'dari', 'dengan', 'pada', 'dalam', 'adalah', 'sebagai',
+  'bahwa', 'oleh', 'atau', 'juga', 'dapat', 'akan', 'tidak', 'telah', 'lebih',
+  'seperti', 'tersebut', 'terhadap', 'melalui', 'karena', 'antara', 'sehingga',
+  'secara', 'serta', 'yaitu', 'yakni', 'maupun', 'namun', 'tetapi', 'bahkan',
+  'masih', 'sudah', 'harus', 'perlu', 'bisa', 'satu', 'dua', 'tiga', 'empat',
+  'lima', 'penelitian', 'hasil', 'data', 'merupakan', 'dilakukan', 'digunakan',
+  'menunjukkan', 'berdasarkan', 'bagian', 'bab', 'tabel', 'gambar', 'halaman',
+]);
+
+function findBrowserBibliographyOffset(text: string): number {
+  const re =
+    /^\s*(?:\d+(?:\.\d+)*\.?\s+)?(daftar\s+pustaka|daftar\s+referensi|references|bibliography|bibliografi|works\s+cited)\s*:?\s*$/gim;
+  let lastOffset = -1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const after = text.slice(m.index, m.index + 240);
+    if (/\.\.\.\.\s*\d+|hal\.\s*\d+/i.test(after)) continue;
+    lastOffset = m.index;
+  }
+  return lastOffset >= 0 ? lastOffset : text.length;
+}
+
+function extractBrowserBibliographyQueries(text: string): string[] {
+  const bibStart = findBrowserBibliographyOffset(text);
+  if (bibStart >= text.length - 30) return [];
+  const bibText = text.slice(bibStart);
+  const lines = bibText
+    .split(/\r?\n+/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 24 && !/^(daftar\s+pustaka|references|bibliography)/i.test(l));
+
+  const out: string[] = [];
+  for (const ln of lines) {
+    const quotedTitle = ln.match(/["“]([^"”]{15,120})["”]/)?.[1];
+    const afterYear = ln.match(/\(\d{4}\)[.,:\s]+([^.]{15,120})/)?.[1];
+    const rawCandidate = quotedTitle || afterYear || ln;
+    const words = rawCandidate
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/10\.\d{4,9}\/\S+/g, ' ')
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !BROWSER_STOP_WORDS.has(w.toLowerCase()) && !/^\d+$/.test(w))
+      .slice(0, 6)
+      .join(' ');
+    if (words.length >= 12) out.push(words);
+    if (out.length >= 10) break;
+  }
+  return Array.from(new Set(out));
+}
+
+function extractBrowserDistributedBodyQueries(text: string): string[] {
+  const bibStart = findBrowserBibliographyOffset(text);
+  const fullBody = text.slice(0, bibStart).trim() || text;
+  const startOffset =
+    fullBody.length > 2600 ? Math.min(1800, Math.floor(fullBody.length * 0.08)) : 0;
+  const body = fullBody.slice(startOffset).trim() || fullBody;
+
+  const sentences = body
+    .split(/(?<=[.!?])\s+|\r?\n+/)
+    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .filter((s) => {
+      if (/\.{4,}\s*\d+$/.test(s)) return false;
+      const wc = (s.match(/[\p{L}\p{N}]+/gu) || []).length;
+      if (wc < 8 || wc > 60) return false;
+      if (s === s.toUpperCase() && /[A-Z]/.test(s)) return false;
+      return true;
+    });
+
+  if (sentences.length === 0) {
+    const fallback = body
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !BROWSER_STOP_WORDS.has(w.toLowerCase()))
+      .slice(0, 5)
+      .join(' ');
+    return fallback ? [fallback] : [];
+  }
+
+  const picked: string[] = [];
+  const sampleFractions = [0.12, 0.28, 0.44, 0.6, 0.76, 0.9];
+  for (const frac of sampleFractions) {
+    const idx = Math.min(sentences.length - 1, Math.floor(sentences.length * frac));
+    const kw = sentences[idx]
+      .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !BROWSER_STOP_WORDS.has(w.toLowerCase()) && !/^\d+$/.test(w))
+      .slice(0, 5)
+      .join(' ');
+    if (kw.length >= 12) picked.push(kw);
+  }
+  return Array.from(new Set(picked)).slice(0, 6);
 }
 
 export interface BrowserParsedDocument {
@@ -312,28 +403,37 @@ async function extractPdfBrowser(bytes: Uint8Array): Promise<{
     return out;
   };
 
-  const lines: string[] = [];
+  const rawLineEvents: Array<{ text: string; gapY: number }> = [];
   const tokenRegex =
     /(\[(?:[^\[\]]|\((?:\\.|[^\\()])*\))*\]\s*TJ|\((?:\\.|[^\\()])*\)\s*(?:Tj|'|")|<[0-9a-fA-F\s]+>\s*(?:Tj|'|")|-?\d+(?:\.\d+)?\s+(-?\d+(?:\.\d+)?)\s+T[dD]|(?:-?\d+(?:\.\d+)?\s+){5}(-?\d+(?:\.\d+)?)\s+Tm|\bT\*\b|\bET\b)/g;
 
   for (const content of decodedStreams) {
     let cur = '';
     let lastY: number | null = null;
+    let pendingGapY = 0;
+
+    const pushCur = (nextGapY: number) => {
+      const cleaned = cur.trim();
+      if (cleaned) {
+        rawLineEvents.push({ text: cleaned, gapY: pendingGapY });
+      }
+      cur = '';
+      pendingGapY = nextGapY;
+    };
+
     tokenRegex.lastIndex = 0;
     let tok: RegExpExecArray | null;
     while ((tok = tokenRegex.exec(content)) !== null) {
       const full = tok[1];
       if (full === 'T*' || full === 'ET') {
-        if (cur.trim()) lines.push(cur.trim());
-        cur = '';
+        pushCur(0);
         continue;
       }
       if (tok[3] !== undefined && full.endsWith('Tm')) {
         const y = parseFloat(tok[3]);
-        if (lastY !== null && Math.abs(y - lastY) > 2.0) {
-          if (cur.trim()) lines.push(cur.trim());
-          cur = '';
-          if (Math.abs(y - lastY) > 18) lines.push('');
+        const gap = lastY !== null ? Math.abs(y - lastY) : 0;
+        if (lastY !== null && gap > 2.0) {
+          pushCur(gap);
         } else if (cur && !cur.endsWith(' ')) {
           cur += ' ';
         }
@@ -341,11 +441,9 @@ async function extractPdfBrowser(bytes: Uint8Array): Promise<{
         continue;
       }
       if (tok[2] !== undefined && /T[dD]$/.test(full)) {
-        const dy = parseFloat(tok[2]);
-        if (Math.abs(dy) > 2.0) {
-          if (cur.trim()) lines.push(cur.trim());
-          cur = '';
-          if (Math.abs(dy) > 18) lines.push('');
+        const dy = Math.abs(parseFloat(tok[2]));
+        if (dy > 2.0) {
+          pushCur(dy);
         } else if (cur && !cur.endsWith(' ')) {
           cur += ' ';
         }
@@ -367,8 +465,28 @@ async function extractPdfBrowser(bytes: Uint8Array): Promise<{
         if (lm) cur += decodePdfLiteralBrowser(lm[1]);
       }
     }
-    if (cur.trim()) lines.push(cur.trim());
+    pushCur(0);
   }
+
+  // Adaptive median vertical line-step: prevents 1.5x/2.0x spaced thesis lines (19-28pt) from splitting mid-sentence
+  const normalGaps = rawLineEvents
+    .map((e) => e.gapY)
+    .filter((g) => g >= 6 && g <= 34)
+    .sort((a, b) => a - b);
+  const medianLineGap =
+    normalGaps.length > 0 ? normalGaps[Math.floor(normalGaps.length / 2)] : 14;
+  const paraGapThreshold = Math.max(26, medianLineGap * 1.48);
+
+  const lines: string[] = [];
+  for (const ev of rawLineEvents) {
+    if (ev.gapY >= paraGapThreshold && ev.gapY <= 180) {
+      lines.push('');
+    }
+    lines.push(ev.text);
+  }
+
+  const HEADING_REGEX =
+    /^(?:BAB\s+[IVX0-9]+|\d+(?:\.\d+)+\s+[A-Z]|Usulan\/Proposal|Proposal\s+Tugas\s+Akhir|Daftar\s+Pustaka|Daftar\s+Isi|Daftar\s+Tabel|Daftar\s+Gambar|References|Bibliography|Bibliografi|Works\s+Cited|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metodologi\s+Penelitian|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Lampiran|Appendix|\[\d+\])/i;
 
   const paragraphs: string[] = [];
   let buf = '';
@@ -382,8 +500,14 @@ async function extractPdfBrowser(bytes: Uint8Array): Promise<{
       continue;
     }
     if (!buf) buf = line;
-    else if (buf.endsWith('-')) buf = buf.slice(0, -1) + line;
-    else if (/[.!?"]$/.test(buf) && (line.length < 75 || /^[A-Z0-9"“(\[]/.test(line))) {
+    else if (HEADING_REGEX.test(line)) {
+      paragraphs.push(buf);
+      buf = line;
+    } else if (HEADING_REGEX.test(buf) && buf.length < 95) {
+      paragraphs.push(buf);
+      buf = line;
+    } else if (buf.endsWith('-')) buf = buf.slice(0, -1) + line;
+    else if (/[.!?"]$/.test(buf) && (buf.length < 62 || line.length < 62 || /^\[\d+\]/.test(line))) {
       paragraphs.push(buf);
       buf = line;
     } else buf += ' ' + line;
@@ -518,8 +642,9 @@ function cleanSnippet(raw: string): string {
 }
 
 /**
- * Queries CORS-enabled global scholarly APIs directly from the user's browser
- * (0.000 ms Vercel Serverless CPU usage!).
+ * Queries CORS-enabled global & Indonesian scholarly APIs directly from the user's browser
+ * across cited DOIs, Daftar Pustaka / References, and distributed chapter sections
+ * (0.000 ms Vercel Serverless CPU usage).
  */
 export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise<{
   sources: CorpusSource[];
@@ -527,68 +652,124 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
   doisResolved: number;
 }> {
   const dois = extractBrowserCitedDois(text);
-  const qPrimary = extractBrowserPrimaryQuery(text);
+  const bibQueries = extractBrowserBibliographyQueries(text);
+  const bodyQueries = extractBrowserDistributedBodyQueries(text);
+  const allQueries = Array.from(new Set([...bibQueries, ...bodyQueries])).slice(0, 12);
 
-  const sources: CorpusSource[] = [];
+  const sourceMap = new Map<string, CorpusSource>();
+  const pushSource = (src: CorpusSource) => {
+    if (!sourceMap.has(src.id)) sourceMap.set(src.id, src);
+  };
   const apisSucceeded = new Set<string>();
   let doisResolved = 0;
 
   const tasks: Promise<void>[] = [];
 
+  // 1. Resolve up to 18 cited DOIs via both Crossref & OpenAlex (parallel)
   for (const doi of dois) {
     tasks.push(
       (async () => {
         try {
-          const r = await fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
-            signal: AbortSignal.timeout(5000),
-          });
-          if (!r.ok) return;
-          const j = await r.json();
-          const it = j?.message;
-          if (!it?.title?.[0]) return;
+          const [crRes, oaRes] = await Promise.all([
+            fetch(`https://api.crossref.org/works/${encodeURIComponent(doi)}`, {
+              signal: AbortSignal.timeout(5500),
+            }).catch(() => null),
+            fetch(
+              `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(
+                doi
+              )}?select=id,doi,title,publication_year,authorships,primary_location,abstract_inverted_index`,
+              { signal: AbortSignal.timeout(5500) }
+            ).catch(() => null),
+          ]);
+
+          let title = '';
+          let abstractText = '';
+          let authors = 'DOI Author';
+          let publication = 'Crossref / OpenAlex DOI';
+          let year = 2024;
+          let targetUrl = `https://doi.org/${doi}`;
+
+          if (crRes && crRes.ok) {
+            const j = await crRes.json();
+            const it = j?.message;
+            if (it) {
+              title = cleanSnippet(Array.isArray(it.title) ? it.title[0] : it.title || '');
+              abstractText = cleanSnippet(it.abstract || '');
+              authors =
+                (it.author || [])
+                  .slice(0, 3)
+                  .map((a: { given?: string; family?: string }) =>
+                    [a.given, a.family].filter(Boolean).join(' ')
+                  )
+                  .join(', ') || authors;
+              publication = cleanSnippet(it['container-title']?.[0] || publication);
+              year = it.published?.['date-parts']?.[0]?.[0] || year;
+              if (typeof it.URL === 'string') targetUrl = it.URL;
+            }
+          }
+
+          if (oaRes && oaRes.ok) {
+            const oj = await oaRes.json();
+            if (!title && oj?.title) title = cleanSnippet(oj.title);
+            if (!abstractText && oj?.abstract_inverted_index) {
+              const words: string[] = [];
+              for (const [w, positions] of Object.entries(
+                oj.abstract_inverted_index as Record<string, number[]>
+              )) {
+                for (const pos of positions) words[pos] = w;
+              }
+              abstractText = cleanSnippet(words.filter(Boolean).join(' '));
+            }
+            if (!publication && oj?.primary_location?.source?.display_name) {
+              publication = cleanSnippet(oj.primary_location.source.display_name);
+            }
+          }
+
+          const combined = [title, abstractText].filter(Boolean).join('. ').trim();
+          if (combined.length < 25) return;
           apisSucceeded.add('Crossref DOI');
           doisResolved++;
-          sources.push({
+          pushSource({
             id: `live-doi-${doi.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
-            title: cleanSnippet(it.title[0]),
-            authors:
-              (it.author || [])
-                .slice(0, 3)
-                .map((a: { given?: string; family?: string }) =>
-                  [a.given, a.family].filter(Boolean).join(' ')
-                )
-                .join(', ') || 'Crossref Author',
-            publication: cleanSnippet(it['container-title']?.[0] || 'Crossref Journal'),
-            year: it.published?.['date-parts']?.[0]?.[0] || 2024,
-            url: it.URL || `https://doi.org/${doi}`,
+            title: title || `DOI ${doi}`,
+            authors,
+            publication,
+            year,
+            url: targetUrl,
             doi,
             category: 'publications',
-            repository: 'Crossref Live Browser Fetch',
-            text: cleanSnippet(it.abstract || it.title[0]),
+            repository: 'Crossref / OpenAlex DOI Live',
+            text: combined.slice(0, 1800),
           });
         } catch {}
       })()
     );
   }
 
-  if (qPrimary.length >= 12) {
+  // 2. Query Crossref Bibliographic across top 6 chapter + bibliography queries
+  for (const q of allQueries.slice(0, 6)) {
     tasks.push(
       (async () => {
         try {
           const r = await fetch(
-            `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(qPrimary)}&filter=has-abstract:true&rows=5&select=DOI,title,author,container-title,published,abstract,URL`,
-            { signal: AbortSignal.timeout(5500) }
+            `https://api.crossref.org/works?query.bibliographic=${encodeURIComponent(
+              q
+            )}&rows=5&select=DOI,title,author,container-title,published,abstract,URL`,
+            { signal: AbortSignal.timeout(6000) }
           );
           if (!r.ok) return;
           const j = await r.json();
           const items = j?.message?.items || [];
           if (items.length > 0) apisSucceeded.add('Crossref');
           for (const it of items) {
-            const abs = cleanSnippet(it.abstract);
-            if (abs.length < 40) continue;
-            sources.push({
-              id: `live-cr-${String(it.DOI).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 42)}`,
-              title: cleanSnippet(it.title?.[0] || 'Crossref Publication'),
+            const title = cleanSnippet(it.title?.[0] || '');
+            const abs = cleanSnippet(it.abstract || '');
+            const pub = cleanSnippet(it['container-title']?.[0] || 'Crossref Journal');
+            const combined = [title, pub, abs].filter(Boolean).join('. ').trim();
+            if (combined.length < 30) continue;
+            pushSource({
+              id: `live-cr-${String(it.DOI || title).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 44)}`,
+              title: title || 'Crossref Publication',
               authors:
                 (it.author || [])
                   .slice(0, 3)
@@ -596,129 +777,30 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
                     [a.given, a.family].filter(Boolean).join(' ')
                   )
                   .join(', ') || 'Crossref Authors',
-              publication: cleanSnippet(it['container-title']?.[0] || 'Crossref Journal'),
+              publication: pub,
               year: it.published?.['date-parts']?.[0]?.[0] || 2024,
               url: it.URL || `https://doi.org/${it.DOI}`,
               doi: it.DOI,
               category: 'publications',
               repository: 'Crossref Live',
-              text: abs.slice(0, 1200),
+              text: combined.slice(0, 1500),
             });
           }
         } catch {}
       })()
     );
+  }
 
+  // 3. Query OpenAlex across up to 8 chapter + bibliography queries (if available)
+  for (const q of allQueries.slice(0, 8)) {
     tasks.push(
       (async () => {
         try {
           const r = await fetch(
-            `https://doaj.org/api/search/articles/${encodeURIComponent(qPrimary.slice(0, 90))}?pageSize=5`,
-            { signal: AbortSignal.timeout(5500) }
-          );
-          if (!r.ok) return;
-          const j = await r.json();
-          const items = j?.results || [];
-          if (items.length > 0) apisSucceeded.add('DOAJ');
-          for (const it of items) {
-            const b = it.bibjson || {};
-            const abs = cleanSnippet(b.abstract);
-            if (abs.length < 40) continue;
-            sources.push({
-              id: `live-doaj-${String(it.id).slice(0, 32)}`,
-              title: cleanSnippet(b.title || 'DOAJ Article'),
-              authors:
-                (b.author || [])
-                  .slice(0, 3)
-                  .map((a: { name?: string }) => a.name)
-                  .filter(Boolean)
-                  .join(', ') || 'DOAJ Authors',
-              publication: cleanSnippet(b.journal?.title || 'DOAJ Journal'),
-              year: Number(b.year) || 2024,
-              url: b.link?.[0]?.url || 'https://doaj.org',
-              category: 'publications',
-              repository: 'DOAJ Live',
-              text: abs.slice(0, 1200),
-            });
-          }
-        } catch {}
-      })()
-    );
-
-    tasks.push(
-      (async () => {
-        try {
-          const r = await fetch(
-            `https://api.datacite.org/dois?query=${encodeURIComponent(qPrimary.slice(0, 90))}&page[size]=5`,
-            { signal: AbortSignal.timeout(5500) }
-          );
-          if (!r.ok) return;
-          const j = await r.json();
-          const items = j?.data || [];
-          if (items.length > 0) apisSucceeded.add('DataCite');
-          for (const d of items) {
-            const attr = d.attributes || {};
-            const desc = cleanSnippet(attr.descriptions?.[0]?.description);
-            if (desc.length < 40) continue;
-            sources.push({
-              id: `live-dc-${String(d.id).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 42)}`,
-              title: cleanSnippet(attr.titles?.[0]?.title || 'DataCite Work'),
-              authors:
-                (attr.creators || [])
-                  .slice(0, 3)
-                  .map((c: { name?: string }) => c.name)
-                  .filter(Boolean)
-                  .join(', ') || 'DataCite Authors',
-              publication: cleanSnippet(attr.publisher || 'DataCite Repository'),
-              year: Number(attr.publicationYear) || 2024,
-              url: attr.url || `https://doi.org/${d.id}`,
-              doi: d.id,
-              category: 'student_papers',
-              repository: 'DataCite Live',
-              text: desc.slice(0, 1200),
-            });
-          }
-        } catch {}
-      })()
-    );
-
-    tasks.push(
-      (async () => {
-        try {
-          const r = await fetch(
-            `https://api.archives-ouvertes.fr/search/?q=${encodeURIComponent(qPrimary.slice(0, 90))}&fl=docid,title_s,authFullName_s,journalTitle_s,producedDateY_i,abstract_s,uri_s&wt=json&rows=5`,
-            { signal: AbortSignal.timeout(5500) }
-          );
-          if (!r.ok) return;
-          const j = await r.json();
-          const docs = j?.response?.docs || [];
-          if (docs.length > 0) apisSucceeded.add('HAL Archive');
-          for (const d of docs) {
-            const abs = cleanSnippet(Array.isArray(d.abstract_s) ? d.abstract_s[0] : d.abstract_s);
-            if (abs.length < 40) continue;
-            sources.push({
-              id: `live-hal-${String(d.docid)}`,
-              title: cleanSnippet(Array.isArray(d.title_s) ? d.title_s[0] : d.title_s || 'HAL Paper'),
-              authors: (d.authFullName_s || []).slice(0, 3).join(', ') || 'HAL Authors',
-              publication: cleanSnippet(d.journalTitle_s || 'HAL Open Archive'),
-              year: Number(d.producedDateY_i) || 2024,
-              url: d.uri_s || 'https://hal.science',
-              category: d.journalTitle_s ? 'publications' : 'student_papers',
-              repository: 'HAL Archive Live',
-              text: abs.slice(0, 1200),
-            });
-          }
-        } catch {}
-      })()
-    );
-
-    // 6. OpenAlex Global Scholarly Graph (260M+ works, CORS enabled)
-    tasks.push(
-      (async () => {
-        try {
-          const r = await fetch(
-            `https://api.openalex.org/works?search=${encodeURIComponent(qPrimary.slice(0, 90))}&per-page=5&select=id,doi,title,publication_year,authorships,primary_location,abstract_inverted_index`,
-            { signal: AbortSignal.timeout(5500) }
+            `https://api.openalex.org/works?search=${encodeURIComponent(
+              q.slice(0, 95)
+            )}&per-page=6&select=id,doi,title,publication_year,authorships,primary_location,abstract_inverted_index`,
+            { signal: AbortSignal.timeout(6000) }
           );
           if (!r.ok) return;
           const j = await r.json();
@@ -726,17 +808,21 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
           let added = 0;
           for (const it of items) {
             const inv = it.abstract_inverted_index as Record<string, number[]> | undefined;
-            if (!inv) continue;
-            const words: string[] = [];
-            for (const [word, positions] of Object.entries(inv)) {
-              for (const pos of positions) words[pos] = word;
+            let abs = '';
+            if (inv) {
+              const words: string[] = [];
+              for (const [word, positions] of Object.entries(inv)) {
+                for (const pos of positions) words[pos] = word;
+              }
+              abs = cleanSnippet(words.filter(Boolean).join(' '));
             }
-            const abs = cleanSnippet(words.filter(Boolean).join(' '));
-            if (abs.length < 40) continue;
+            const title = cleanSnippet(it.title || 'OpenAlex Work');
+            const combined = [title, abs].filter(Boolean).join('. ').trim();
+            if (combined.length < 35) continue;
             added++;
-            sources.push({
+            pushSource({
               id: `live-oa-${String(it.id || added).split('/').pop()}`,
-              title: cleanSnippet(it.title || 'OpenAlex Work'),
+              title,
               authors:
                 (it.authorships || [])
                   .slice(0, 3)
@@ -751,20 +837,134 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
               doi: it.doi ? String(it.doi).replace(/^https?:\/\/doi\.org\//i, '') : undefined,
               category: 'publications',
               repository: 'OpenAlex Global Graph (260M+)',
-              text: abs.slice(0, 1200),
+              text: combined.slice(0, 1500),
             });
           }
           if (added > 0) apisSucceeded.add('OpenAlex');
         } catch {}
       })()
     );
+  }
 
-    // 7. PLOS Open Access Peer-Reviewed Corpus (CORS enabled)
+  // 4. Query DOAJ Open Access Journals across top 5 queries (captures Indonesian SINTA/DOAJ papers!)
+  for (const q of allQueries.slice(0, 5)) {
     tasks.push(
       (async () => {
         try {
           const r = await fetch(
-            `https://api.plos.org/search?q=${encodeURIComponent(qPrimary.slice(0, 90))}&fl=id,title_display,author_display,journal,publication_date,abstract&wt=json&rows=5`,
+            `https://doaj.org/api/search/articles/${encodeURIComponent(
+              q.slice(0, 90)
+            )}?pageSize=6`,
+            { signal: AbortSignal.timeout(6000) }
+          );
+          if (!r.ok) return;
+          const j = await r.json();
+          const items = j?.results || [];
+          if (items.length > 0) apisSucceeded.add('DOAJ');
+          for (const it of items) {
+            const b = it.bibjson || {};
+            const title = cleanSnippet(b.title || 'DOAJ Article');
+            const abs = cleanSnippet(b.abstract || '');
+            const combined = [title, abs].filter(Boolean).join('. ').trim();
+            if (combined.length < 40) continue;
+            pushSource({
+              id: `live-doaj-${String(it.id).slice(0, 32)}`,
+              title,
+              authors:
+                (b.author || [])
+                  .slice(0, 3)
+                  .map((a: { name?: string }) => a.name)
+                  .filter(Boolean)
+                  .join(', ') || 'DOAJ Authors',
+              publication: cleanSnippet(b.journal?.title || 'DOAJ Journal'),
+              year: Number(b.year) || 2024,
+              url: b.link?.[0]?.url || 'https://doaj.org',
+              category: 'publications',
+              repository: 'DOAJ Live',
+              text: combined.slice(0, 1500),
+            });
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  // 5. DataCite, HAL Archive, PLOS, PubMed across top 3 queries
+  for (const q of allQueries.slice(0, 3)) {
+    tasks.push(
+      (async () => {
+        try {
+          const r = await fetch(
+            `https://api.datacite.org/dois?query=${encodeURIComponent(q.slice(0, 90))}&page[size]=5`,
+            { signal: AbortSignal.timeout(5500) }
+          );
+          if (!r.ok) return;
+          const j = await r.json();
+          const items = j?.data || [];
+          if (items.length > 0) apisSucceeded.add('DataCite');
+          for (const d of items) {
+            const attr = d.attributes || {};
+            const title = cleanSnippet(attr.titles?.[0]?.title || 'DataCite Work');
+            const desc = cleanSnippet(attr.descriptions?.[0]?.description || '');
+            const combined = [title, desc].filter(Boolean).join('. ').trim();
+            if (combined.length < 40) continue;
+            pushSource({
+              id: `live-dc-${String(d.id).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 42)}`,
+              title,
+              authors:
+                (attr.creators || [])
+                  .slice(0, 3)
+                  .map((c: { name?: string }) => c.name)
+                  .filter(Boolean)
+                  .join(', ') || 'DataCite Authors',
+              publication: cleanSnippet(attr.publisher || 'DataCite Repository'),
+              year: Number(attr.publicationYear) || 2024,
+              url: attr.url || `https://doi.org/${d.id}`,
+              doi: d.id,
+              category: 'student_papers',
+              repository: 'DataCite Live',
+              text: combined.slice(0, 1500),
+            });
+          }
+        } catch {}
+      })(),
+      (async () => {
+        try {
+          const r = await fetch(
+            `https://api.archives-ouvertes.fr/search/?q=${encodeURIComponent(
+              q.slice(0, 90)
+            )}&fl=docid,title_s,authFullName_s,journalTitle_s,producedDateY_i,abstract_s,uri_s&wt=json&rows=5`,
+            { signal: AbortSignal.timeout(5500) }
+          );
+          if (!r.ok) return;
+          const j = await r.json();
+          const docs = j?.response?.docs || [];
+          if (docs.length > 0) apisSucceeded.add('HAL Archive');
+          for (const d of docs) {
+            const title = cleanSnippet(Array.isArray(d.title_s) ? d.title_s[0] : d.title_s || '');
+            const abs = cleanSnippet(Array.isArray(d.abstract_s) ? d.abstract_s[0] : d.abstract_s);
+            const combined = [title, abs].filter(Boolean).join('. ').trim();
+            if (combined.length < 40) continue;
+            pushSource({
+              id: `live-hal-${String(d.docid)}`,
+              title: title || 'HAL Paper',
+              authors: (d.authFullName_s || []).slice(0, 3).join(', ') || 'HAL Authors',
+              publication: cleanSnippet(d.journalTitle_s || 'HAL Open Archive'),
+              year: Number(d.producedDateY_i) || 2024,
+              url: d.uri_s || 'https://hal.science',
+              category: d.journalTitle_s ? 'publications' : 'student_papers',
+              repository: 'HAL Archive Live',
+              text: combined.slice(0, 1500),
+            });
+          }
+        } catch {}
+      })(),
+      (async () => {
+        try {
+          const r = await fetch(
+            `https://api.plos.org/search?q=${encodeURIComponent(
+              q.slice(0, 90)
+            )}&fl=id,title_display,author_display,journal,publication_date,abstract&wt=json&rows=5`,
             { signal: AbortSignal.timeout(5500) }
           );
           if (!r.ok) return;
@@ -774,7 +974,7 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
           for (const d of docs) {
             const abs = cleanSnippet(Array.isArray(d.abstract) ? d.abstract.join(' ') : d.abstract);
             if (abs.length < 40) continue;
-            sources.push({
+            pushSource({
               id: `live-plos-${String(d.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`,
               title: cleanSnippet(d.title_display || 'PLOS Article'),
               authors: (d.author_display || []).slice(0, 3).join(', ') || 'PLOS Authors',
@@ -784,19 +984,24 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
               doi: d.id,
               category: 'publications',
               repository: 'PLOS Open Access Live',
-              text: abs.slice(0, 1200),
+              text: abs.slice(0, 1500),
             });
           }
         } catch {}
       })()
     );
+  }
 
-    // 8. PubMed / MEDLINE Biomedical Index (38M+ citations, CORS enabled)
+  // 6. PubMed & Wikipedia ID/EN across top 3 chapter topic queries (with full extracts!)
+  for (const q of (bodyQueries.length > 0 ? bodyQueries : allQueries).slice(0, 3)) {
+    const shortWikiQ = q.split(/\s+/).slice(0, 4).join(' ');
     tasks.push(
       (async () => {
         try {
           const sr = await fetch(
-            `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&term=${encodeURIComponent(qPrimary.slice(0, 80))}`,
+            `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=3&term=${encodeURIComponent(
+              q.slice(0, 80)
+            )}`,
             { signal: AbortSignal.timeout(5000) }
           );
           if (!sr.ok) return;
@@ -813,7 +1018,7 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
           for (const pmid of ids) {
             const rec = smj?.result?.[pmid];
             if (!rec?.title) continue;
-            sources.push({
+            pushSource({
               id: `live-pm-${pmid}`,
               title: cleanSnippet(rec.title),
               authors:
@@ -834,23 +1039,26 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
       })()
     );
 
-    const shortWikiQ = qPrimary.split(/\s+/).slice(0, 4).join(' ');
-    for (const lang of ['en', 'id'] as const) {
+    for (const lang of ['id', 'en'] as const) {
       tasks.push(
         (async () => {
           try {
             const base = `https://${lang}.wikipedia.org/w/api.php`;
             const sr = await fetch(
-              `${base}?action=query&list=search&srsearch=${encodeURIComponent(shortWikiQ)}&srlimit=3&format=json&origin=*`,
-              { signal: AbortSignal.timeout(4500) }
+              `${base}?action=query&list=search&srsearch=${encodeURIComponent(
+                shortWikiQ
+              )}&srlimit=3&format=json&origin=*`,
+              { signal: AbortSignal.timeout(5000) }
             );
             if (!sr.ok) return;
             const sj = await sr.json();
             const titles = (sj?.query?.search || []).map((x: { title: string }) => x.title);
             if (!titles.length) return;
             const er = await fetch(
-              `${base}?action=query&prop=extracts&exintro=1&explaintext=1&titles=${encodeURIComponent(titles.join('|'))}&format=json&origin=*`,
-              { signal: AbortSignal.timeout(4500) }
+              `${base}?action=query&prop=extracts&exchars=2500&explaintext=1&titles=${encodeURIComponent(
+                titles.join('|')
+              )}&format=json&origin=*`,
+              { signal: AbortSignal.timeout(5000) }
             );
             if (!er.ok) return;
             const ej = await er.json();
@@ -863,16 +1071,18 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
             for (const p of pages) {
               const ext = cleanSnippet(p.extract || '');
               if (ext.length < 40 || !p.title) continue;
-              sources.push({
+              pushSource({
                 id: `live-wiki-${lang}-${p.pageid}`,
                 title: cleanSnippet(p.title),
                 authors: `Wikipedia ${lang.toUpperCase()} Contributors`,
                 publication: `Wikipedia (${lang.toUpperCase()})`,
                 year: 2025,
-                url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`,
+                url: `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(
+                  p.title.replace(/ /g, '_')
+                )}`,
                 category: 'internet',
                 repository: `Wikipedia ${lang.toUpperCase()} Live`,
-                text: ext.slice(0, 1200),
+                text: ext.slice(0, 2400),
               });
             }
           } catch {}
@@ -884,7 +1094,7 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
   await Promise.all(tasks);
 
   return {
-    sources,
+    sources: Array.from(sourceMap.values()),
     apisSucceeded: Array.from(apisSucceeded),
     doisResolved,
   };

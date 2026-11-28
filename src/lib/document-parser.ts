@@ -557,7 +557,7 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
     searchPos = endStreamIdx + 9;
   }
 
-  const lines: string[] = [];
+  const rawLineEvents: Array<{ text: string; gapY: number }> = [];
 
   for (const content of decodedStreams) {
     if (!content.includes('BT') && !content.includes('Tj') && !content.includes('TJ')) {
@@ -566,6 +566,16 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
 
     let currentLine = '';
     let lastTmY: number | null = null;
+    let pendingGapY = 0;
+
+    const pushCurrentLine = (nextGapY: number) => {
+      const cleaned = currentLine.trim();
+      if (cleaned) {
+        rawLineEvents.push({ text: cleaned, gapY: pendingGapY });
+      }
+      currentLine = '';
+      pendingGapY = nextGapY;
+    };
 
     // Tokenize PDF text operators across the stream without cutting on "ET" inside words
     const tokenRegex =
@@ -576,20 +586,15 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
       const full = tok[1];
 
       if (full === 'T*' || full === 'ET') {
-        if (currentLine.trim()) lines.push(currentLine.trim());
-        currentLine = '';
+        pushCurrentLine(0);
         continue;
       }
 
       if (tok[3] !== undefined && full.endsWith('Tm')) {
         const tmY = parseFloat(tok[3]);
-        if (lastTmY !== null && Math.abs(tmY - lastTmY) > 2.0) {
-          if (currentLine.trim()) lines.push(currentLine.trim());
-          currentLine = '';
-          // Insert blank line marker on larger vertical paragraph/heading gaps
-          if (Math.abs(tmY - lastTmY) > 18) {
-            lines.push('');
-          }
+        const gap = lastTmY !== null ? Math.abs(tmY - lastTmY) : 0;
+        if (lastTmY !== null && gap > 2.0) {
+          pushCurrentLine(gap);
         } else if (currentLine && !currentLine.endsWith(' ')) {
           currentLine += ' ';
         }
@@ -598,13 +603,9 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
       }
 
       if (tok[2] !== undefined && /T[dD]$/.test(full)) {
-        const dy = parseFloat(tok[2]);
-        if (Math.abs(dy) > 2.0) {
-          if (currentLine.trim()) lines.push(currentLine.trim());
-          currentLine = '';
-          if (Math.abs(dy) > 18) {
-            lines.push('');
-          }
+        const dy = Math.abs(parseFloat(tok[2]));
+        if (dy > 2.0) {
+          pushCurrentLine(dy);
         } else if (currentLine && !currentLine.endsWith(' ')) {
           currentLine += ' ';
         }
@@ -640,14 +641,29 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
       }
     }
 
-    if (currentLine.trim()) {
-      lines.push(currentLine.trim());
+    pushCurrentLine(0);
+  }
+
+  // Compute adaptive median vertical line spacing so 1.5x/2.0x spaced thesis lines (19-28pt) unwrap cleanly
+  const normalGaps = rawLineEvents
+    .map((e) => e.gapY)
+    .filter((g) => g >= 6 && g <= 34)
+    .sort((a, b) => a - b);
+  const medianLineGap =
+    normalGaps.length > 0 ? normalGaps[Math.floor(normalGaps.length / 2)] : 14;
+  const paraGapThreshold = Math.max(26, medianLineGap * 1.48);
+
+  const lines: string[] = [];
+  for (const ev of rawLineEvents) {
+    if (ev.gapY >= paraGapThreshold && ev.gapY <= 180) {
+      lines.push('');
     }
+    lines.push(ev.text);
   }
 
   // Group extracted PDF lines into clean paragraphs while preserving headings and Daftar Pustaka / References
   const HEADING_REGEX =
-    /^(?:BAB\s+[IVX0-9]+|\d+(?:\.\d+)*\s+[A-Z]|Daftar\s+Pustaka|References|Bibliography|Bibliografi|Works\s+Cited|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Penutup|\[\d+\])/i;
+    /^(?:BAB\s+[IVX0-9]+|\d+(?:\.\d+)+\s+[A-Z]|Usulan\/Proposal|Proposal\s+Tugas\s+Akhir|Daftar\s+Pustaka|Daftar\s+Isi|Daftar\s+Tabel|Daftar\s+Gambar|References|Bibliography|Bibliografi|Works\s+Cited|Abstrak|Abstract|Pendahuluan|Introduction|Tinjauan\s+Pustaka|Landasan\s+Teori|Metodologi\s+Penelitian|Metode\s+Penelitian|Hasil\s+dan\s+Pembahasan|Kesimpulan|Lampiran|Appendix|\[\d+\])/i;
 
   const paragraphs: string[] = [];
   let buf = '';
@@ -665,12 +681,12 @@ export function extractTextFromPdfBuffer(buffer: Buffer): {
     } else if (HEADING_REGEX.test(line)) {
       paragraphs.push(buf);
       buf = line;
-    } else if (HEADING_REGEX.test(buf) && buf.length < 90) {
+    } else if (HEADING_REGEX.test(buf) && buf.length < 95) {
       paragraphs.push(buf);
       buf = line;
     } else if (buf.endsWith('-')) {
       buf = buf.slice(0, -1) + line;
-    } else if (/[.!?"]$/.test(buf) && (line.length < 75 || /^[A-Z0-9"“(\[]/.test(line))) {
+    } else if (/[.!?"]$/.test(buf) && (buf.length < 62 || line.length < 62 || /^\[\d+\]/.test(line))) {
       paragraphs.push(buf);
       buf = line;
     } else {

@@ -65,8 +65,8 @@ export default function HomePage() {
     : '100%';
   const abstractCountLabel = corpusManifest
     ? corpusManifest.totalReferences.toLocaleString()
-    : '30,000';
-  const abstractShardCount = corpusManifest ? corpusManifest.shardCount : 12;
+    : '35,000';
+  const abstractShardCount = corpusManifest ? corpusManifest.shardCount : 14;
 
   // 100% Real live calculation via runManuscriptAudit on Sample 01 against all 500 global references
   const livePreviewAudit = useMemo(() => {

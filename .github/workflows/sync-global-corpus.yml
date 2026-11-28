@@ -17,7 +17,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Verify SHA-256 checksums and gzip integrity of all 18 cloud shards (12 abstracts + 6 world journals)
+      - name: Verify SHA-256 checksums and gzip integrity of all 20 cloud shards (14 abstracts + 6 world journals)
         run: |
           node -e "
           const fs = require('fs');
