@@ -20,9 +20,12 @@ import { CorpusSource, SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
 import { getHeadToHead20Samples } from '@/lib/head-to-head-benchmark';
 import {
   loadVerifiedShardedCloudCorpus,
+  loadVerifiedWorldJournalsManifest,
   ShardVerificationResult,
+  WorldJournalsManifest,
 } from '@/lib/cloud-corpus-loader';
 import {
+  createDocxBlobInBrowser,
   fetchLiveSourcesDirectlyFromBrowser,
   parseDocumentInBrowser,
 } from '@/lib/browser-document-parser';
@@ -158,6 +161,9 @@ export function FeedbackStudio() {
     verified: boolean;
     shards: ShardVerificationResult[];
   } | null>(null);
+  const [worldJournalsManifest, setWorldJournalsManifest] =
+    useState<WorldJournalsManifest | null>(null);
+  const refSeqRef = useRef(1);
   const [extraFetchedSources, setExtraFetchedSources] = useState<CorpusSource[]>([]);
   const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
   const [scanningWeb, setScanningWeb] = useState<boolean>(false);
@@ -214,9 +220,16 @@ export function FeedbackStudio() {
     } catch { }
   }, [allCalibrationSamples]);
 
-  // Hydrate all 4 gzipped GitHub cloud shards (10,000 refs) with SHA-256 verification and idle-chunked 60fps indexing (0ms Vercel CPU)
+  // Hydrate all 4 gzipped GitHub cloud shards (10,000 refs) & World Journals manifest with SHA-256 verification (0ms Vercel CPU)
   useEffect(() => {
     let active = true;
+    loadVerifiedWorldJournalsManifest({ preferGitHubRaw: false })
+      .then((res) => {
+        if (active && res.manifest) {
+          setWorldJournalsManifest(res.manifest);
+        }
+      })
+      .catch(() => { });
     loadVerifiedShardedCloudCorpus({ preferGitHubRaw: false })
       .then((res) => {
         if (!active || res.sources.length === 0) return;
@@ -340,19 +353,35 @@ export function FeedbackStudio() {
       else setScanningWeb(true);
 
       try {
+        // Zero-Vercel-CPU critique generation directly inside browser
+        if (withVoiceCritique) {
+          const st = audit.stylometry;
+          const sig = st.forensicSignals;
+          const profileNote =
+            sig?.detectedProfile === 'narrative_staccato_ai'
+              ? `Detected staccato LLM narrative cadence (${Math.round(sig.staccatoFragmentRatio * 100)}% short fragments <=5w, ${Math.round(sig.microParagraphRatio * 100)}% micro-paragraphs, ${Math.round(sig.lexicalEchoRatio * 100)}% proximal lexical echo).`
+              : st.overallAiPercent >= 50
+              ? `Low sentence-length burstiness (CV = ${st.burstinessScore}), MATTR-50 = ${st.mattr50}, and ${st.formulaicMarkerCount} formulaic discourse marker(s) indicate uniform synthetic phrasing.`
+              : `Natural prose variance observed (Burstiness CV = ${st.burstinessScore}, MATTR-50 = ${st.mattr50}, entropy = ${st.shannonEntropy} bits).`;
+          const guidance =
+            st.overallAiPercent >= 40
+              ? 'Vary clause subordination across consecutive sentences, replace abstract nominalizations with concrete measurements, and cite exact primary page numbers.'
+              : 'Maintain empirical nouns and enclose any verbatim borrowing >= 8 words inside quotation marks with explicit attribution.';
+          setEditorialCritique(`${profileNote} Overall synthetic probability: ${st.overallAiPercent}% (Turnitin Indicator: ${st.turnitinAiIndicator}). ${guidance}`);
+          return;
+        }
+
         // Zero-Vercel-CPU fast path: query CORS-open global scholarly APIs directly from browser first
-        if (!withVoiceCritique) {
-          const direct = await fetchLiveSourcesDirectlyFromBrowser(text);
-          if (direct.sources.length > 0) {
-            setExtraFetchedSources(direct.sources);
-            setLiveStats({
-              totalFetched: direct.sources.length,
-              apisSucceeded: direct.apisSucceeded,
-              doisResolved: direct.doisResolved,
-              urlsResolved: 0,
-            });
-            return;
-          }
+        const direct = await fetchLiveSourcesDirectlyFromBrowser(text);
+        if (direct.sources.length > 0) {
+          setExtraFetchedSources(direct.sources);
+          setLiveStats({
+            totalFetched: direct.sources.length,
+            apisSucceeded: direct.apisSucceeded,
+            doisResolved: direct.doisResolved,
+            urlsResolved: 0,
+          });
+          return;
         }
 
         // Fallback to lightweight serverless endpoint (sourcesOnly skips server-side audit CPU)
@@ -388,7 +417,7 @@ export function FeedbackStudio() {
         setLoadingCritique(false);
       }
     },
-    [text, exclusions, excludedSourceIds, customSources]
+    [text, exclusions, excludedSourceIds, customSources, audit.stylometry]
   );
 
   const handleSelectSample = (sampleId: string) => {
@@ -526,34 +555,22 @@ export function FeedbackStudio() {
     await processUploadedFile(file);
   };
 
-  const handleExportDocx = async () => {
-    try {
-      const res = await fetch('/api/parse-document', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'export-docx',
-          title,
-          author,
-          text,
-        }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `citeward-manuscript-${audit.documentHashSha256.slice(0, 8)}.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch { }
+  const handleExportDocx = () => {
+    const blob = createDocxBlobInBrowser(title, author, text);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `citeward-manuscript-${audit.documentHashSha256.slice(0, 8)}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleAddCustomSource = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customText.trim()) return;
+    const seq = refSeqRef.current++;
     const newSource: CorpusSource = {
-      id: `custom-${Date.now()}`,
+      id: `custom-${seq}`,
       title: customTitle.trim() || `Reference Document #${customSources.length + 1}`,
       authors: 'User Reference Source',
       publication: 'Direct Comparison Corpus',
@@ -574,7 +591,29 @@ export function FeedbackStudio() {
     if (!file) return;
     setUploadingRefDoc(true);
     setUploadError(null);
+    const seq = refSeqRef.current++;
     try {
+      // Zero-Vercel-CPU local extraction first
+      const localParsed = await parseDocumentInBrowser(file).catch(() => null);
+      if (localParsed && localParsed.text.trim()) {
+        const refSource: CorpusSource = {
+          id: `custom-file-${seq}`,
+          title: customTitle.trim() || localParsed.extractedTitle || file.name,
+          authors: 'Uploaded Reference File',
+          publication: `${String(localParsed.fileType || 'DOC').toUpperCase()} Reference`,
+          year: 2026,
+          url: 'https://citeward.vercel.app/studio',
+          category: 'publications',
+          repository: 'User Reference File',
+          text: localParsed.text,
+        };
+        setCustomSources((prev) => [...prev, refSource]);
+        setCustomTitle('');
+        setCustomText('');
+        setShowCustomForm(false);
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/parse-document?mode=reference', {
@@ -586,7 +625,7 @@ export function FeedbackStudio() {
         throw new Error(data?.error || 'Could not extract readable text from reference file.');
       }
       const refSource: CorpusSource = {
-        id: `custom-file-${Date.now()}`,
+        id: `custom-file-${seq}`,
         title: customTitle.trim() || data.parsed.extractedTitle || file.name,
         authors: 'Uploaded Reference File',
         publication: `${String(data.parsed.fileType || 'DOC').toUpperCase()} Reference`,
@@ -608,7 +647,7 @@ export function FeedbackStudio() {
           setCustomSources((prev) => [
             ...prev,
             {
-              id: `custom-file-${Date.now()}`,
+              id: `custom-file-${seq}`,
               title: customTitle.trim() || file.name,
               authors: 'Uploaded Reference File',
               publication: 'TXT Reference',
@@ -788,6 +827,15 @@ export function FeedbackStudio() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {worldJournalsManifest && (
+              <Link
+                href="/benchmark#world-journals"
+                title={`Global registry stored across ${worldJournalsManifest.shardCount} SHA-256 gzip shards (${worldJournalsManifest.snapshotDate})`}
+                className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-signal-wash)] text-[var(--cw-signal-ink)] border border-[var(--cw-signal-rule)] font-semibold hover:underline"
+              >
+                {worldJournalsManifest.totalVenues.toLocaleString()} World Journals ({worldJournalsManifest.coveragePercent}% GitHub)
+              </Link>
+            )}
             {cloudSources.length > 0 && (
               <span
                 title={

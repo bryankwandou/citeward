@@ -14,6 +14,10 @@ import {
   humanizeAndParaphraseDeterministically,
   scanDocumentManipulations,
 } from '@/lib/forensics-and-ecosystem';
+import {
+  createDocxBlobInBrowser,
+  parseDocumentInBrowser,
+} from '@/lib/browser-document-parser';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
 
 const PRESET_SLOP = `In the rapidly evolving landscape of contemporary higher education, the integration of automated analytical frameworks plays a pivotal role in shaping institutional governance. Furthermore, stakeholders across academic institutions must navigate a complex tapestry of regulatory expectations while fostering an environment of continuous innovation. Moreover, it is important to note that operational transparency serves as a foundational pillar for sustainable organizational transformation. In conclusion, the future of academic administration relies heavily on the responsible adoption of transparent verification mechanisms.`;
@@ -25,6 +29,7 @@ const PRESET_HOMOGLYPH = `Digit\u0430l d\u043Ecuments \u0430re e\u0430sily c\u04
 export function AntiAiParaphraseStudio() {
   const [inputText, setInputText] = useState<string>(PRESET_SLOP);
   const [rewriting, setRewriting] = useState<boolean>(false);
+  const [useCloudLlm, setUseCloudLlm] = useState<boolean>(false);
   const [uploadingFile, setUploadingFile] = useState<boolean>(false);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [beforeSnapshot, setBeforeSnapshot] = useState<{
@@ -41,6 +46,16 @@ export function AntiAiParaphraseStudio() {
     setUploadingFile(true);
     setBeforeSnapshot(null);
     try {
+      // Zero-Vercel-CPU fast path: parse .PDF/.DOCX/.ODT/.RTF/.HTML/.TXT locally in browser first
+      const localParsed = await parseDocumentInBrowser(file).catch(() => null);
+      if (localParsed && localParsed.text.trim()) {
+        setInputText(localParsed.text.slice(0, 60000));
+        setUploadedFileName(
+          `${localParsed.fileName} (${String(localParsed.fileType).toUpperCase()}, ${localParsed.wordCount}w)`
+        );
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/parse-document?mode=reference', {
@@ -64,29 +79,18 @@ export function AntiAiParaphraseStudio() {
     }
   };
 
-  const handleExportParaphrasedDocx = async () => {
-    try {
-      const res = await fetch('/api/parse-document', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'export-docx',
-          title: 'Citeward Paraphrased Manuscript (<5% Sim & 0 AI Tells)',
-          author: 'Citeward Anti-AI-ish Studio',
-          text: inputText,
-        }),
-      });
-      if (!res.ok) return;
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'citeward-paraphrased-human.docx';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      // Ignore error
-    }
+  const handleExportParaphrasedDocx = () => {
+    const blob = createDocxBlobInBrowser(
+      'Citeward Paraphrased Manuscript (<5% Sim & 0 AI Tells)',
+      'Citeward Anti-AI-ish Studio',
+      inputText
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'citeward-paraphrased-human.docx';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const liveAnalysis = useMemo(() => {
@@ -108,10 +112,15 @@ export function AntiAiParaphraseStudio() {
       tells: liveAnalysis.tells.tells.length + liveAnalysis.manip.flags.length,
     });
 
-    // Apply instant deterministic de-slop + homoglyph normalization first
+    // Apply instant deterministic de-slop + homoglyph normalization locally (0.000 ms Vercel CPU)
     const cleanInput = liveAnalysis.manip.sanitizedText;
     const localHuman = humanizeAndParaphraseDeterministically(cleanInput);
     setInputText(localHuman);
+
+    if (!useCloudLlm) {
+      setRewriting(false);
+      return;
+    }
 
     try {
       const res = await fetch('/api/paraphrase', {
@@ -120,6 +129,7 @@ export function AntiAiParaphraseStudio() {
         body: JSON.stringify({
           text: cleanInput,
           mode: 'empirical_academic',
+          rewriteOnly: true,
         }),
       });
       const data = await res.json();
@@ -143,15 +153,18 @@ export function AntiAiParaphraseStudio() {
     >
       <div className="max-w-[1380px] mx-auto px-4 sm:px-6">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-end mb-8">
-          <div className="lg:col-span-7">
-            <div className="cw-kicker mb-2">
-              § 04 — ANTI-AI-ISH &amp; NATURAL HUMAN PARAPHRASE STUDIO
+          <div className="lg:col-span-7 cw-reveal">
+            <div className="cw-kicker mb-2 flex flex-wrap items-center gap-2">
+              <span>§ 04 — ANTI-AI-ISH &amp; NATURAL HUMAN PARAPHRASE STUDIO</span>
+              <span className="px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] text-[var(--cw-good)] font-semibold">
+                0ms Vercel CPU &middot; Local Browser Engine
+              </span>
             </div>
             <h2 className="cw-h1">
               Paste a passage. Strip every AI tell and verbatim shingle below 5%.
             </h2>
           </div>
-          <p className="lg:col-span-5 text-sm text-[var(--cw-ink-2)] leading-relaxed">
+          <p className="lg:col-span-5 text-sm text-[var(--cw-ink-2)] leading-relaxed cw-reveal cw-d1">
             Flags formulaic LLM discourse markers, uniform 18-word sentence cadence,
             Cyrillic homoglyph spoofing, and unquoted 8-word source overlaps—then
             rewrites into concrete, empirical human prose with zero emojis and zero
@@ -161,7 +174,7 @@ export function AntiAiParaphraseStudio() {
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left 7 cols: Live Input & Preset Triggers */}
-          <div className="lg:col-span-7 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 shadow-[var(--cw-e2)] space-y-4">
+          <div className="lg:col-span-7 cw-lift cw-reveal cw-d1 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 shadow-[var(--cw-e2)] space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
@@ -316,11 +329,21 @@ export function AntiAiParaphraseStudio() {
                 <RotateCcw className="w-3.5 h-3.5" />
                 <span>Reset Passage</span>
               </button>
+
+              <label className="inline-flex items-center gap-1.5 cw-mono text-[11px] text-[var(--cw-ink-2)] cursor-pointer select-none ml-auto">
+                <input
+                  type="checkbox"
+                  checked={useCloudLlm}
+                  onChange={(e) => setUseCloudLlm(e.target.checked)}
+                  className="rounded accent-[var(--cw-signal)]"
+                />
+                <span>Optional Cloud LLM Polish</span>
+              </label>
             </div>
           </div>
 
           {/* Right 5 cols: Diagnostic Tell & Manipulation List */}
-          <div className="lg:col-span-5 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 shadow-[var(--cw-e2)] space-y-4">
+          <div className="lg:col-span-5 cw-lift cw-reveal cw-d2 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 shadow-[var(--cw-e2)] space-y-4">
             <div className="flex items-baseline gap-3 pb-3 border-b border-[var(--cw-rule)]">
               <span
                 className={`cw-mono text-5xl font-extrabold tracking-tight ${

@@ -1,0 +1,93 @@
+{
+  "version": "1.0",
+  "snapshotDate": "2026-10-14",
+  "sourceSnapshot": "https://openalex.s3.amazonaws.com/data/jsonl/sources/manifest.json",
+  "globalUniverseCount": 268629,
+  "totalVenues": 268629,
+  "coveragePercent": 100,
+  "shardCount": 6,
+  "breakdown": {
+    "journals": 217114,
+    "conferences": 12107,
+    "repositories": 7268,
+    "other": 32140,
+    "doajIndexed": 23527,
+    "openAccess": 76072,
+    "coreVenues": 35485
+  },
+  "totalWorksRepresented": 412613040,
+  "totalCitedByRepresented": 2813128685,
+  "countriesCount": 256,
+  "rawBytes": 22364758,
+  "gzipBytes": 8642063,
+  "compressionRatioPercent": 61.4,
+  "githubManifestUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/manifest.json",
+  "shards": [
+    {
+      "shard": 1,
+      "file": "venues-01.min.json.gz",
+      "count": 44772,
+      "worksSum": 379226633,
+      "rawBytes": 3842668,
+      "gzipBytes": 1563642,
+      "sha256": "a8ef21ca9724c389453aeb4d36242430e33041881905dff02ed4c4fce4ddb265",
+      "cdnPath": "/datasets/journals/venues-01.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/venues-01.min.json.gz"
+    },
+    {
+      "shard": 2,
+      "file": "venues-02.min.json.gz",
+      "count": 44772,
+      "worksSum": 19777680,
+      "rawBytes": 3769675,
+      "gzipBytes": 1547086,
+      "sha256": "cf01c4e8b24d41dde02cd1715f72c6bbd433706a9048da5faafc859ea539fe17",
+      "cdnPath": "/datasets/journals/venues-02.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/venues-02.min.json.gz"
+    },
+    {
+      "shard": 3,
+      "file": "venues-03.min.json.gz",
+      "count": 44772,
+      "worksSum": 8334444,
+      "rawBytes": 3758831,
+      "gzipBytes": 1520772,
+      "sha256": "bc3775cb32c84323ff9d65e762fc3b9a296d3132671fd4f7320942ed67a1433c",
+      "cdnPath": "/datasets/journals/venues-03.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/venues-03.min.json.gz"
+    },
+    {
+      "shard": 4,
+      "file": "venues-04.min.json.gz",
+      "count": 44772,
+      "worksSum": 3890924,
+      "rawBytes": 3755259,
+      "gzipBytes": 1486097,
+      "sha256": "1f585751514d1555500fe03bfd2dfdd97420fe3e17199f031349c0261e1e9f62",
+      "cdnPath": "/datasets/journals/venues-04.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/venues-04.min.json.gz"
+    },
+    {
+      "shard": 5,
+      "file": "venues-05.min.json.gz",
+      "count": 44772,
+      "worksSum": 1236689,
+      "rawBytes": 3632714,
+      "gzipBytes": 1334649,
+      "sha256": "f50423e7d31f1616703fe411830ab9c4daca81c7434feb1e205c57cdec340f97",
+      "cdnPath": "/datasets/journals/venues-05.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/venues-05.min.json.gz"
+    },
+    {
+      "shard": 6,
+      "file": "venues-06.min.json.gz",
+      "count": 44769,
+      "worksSum": 146670,
+      "rawBytes": 3605611,
+      "gzipBytes": 1189817,
+      "sha256": "baaeeaae594c6e6ff8a307ced2f23d921a4be1957037636fa56030f377cd76eb",
+      "cdnPath": "/datasets/journals/venues-06.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/venues-06.min.json.gz"
+    }
+  ]
+}

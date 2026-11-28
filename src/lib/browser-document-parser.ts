@@ -890,3 +890,146 @@ export async function fetchLiveSourcesDirectlyFromBrowser(text: string): Promise
   };
 }
 
+function crc32Browser(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function escapeXmlBrowser(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function concatUint8Arrays(parts: Uint8Array[]): Uint8Array {
+  let total = 0;
+  for (const p of parts) total += p.length;
+  const out = new Uint8Array(total);
+  let pos = 0;
+  for (const p of parts) {
+    out.set(p, pos);
+    pos += p.length;
+  }
+  return out;
+}
+
+/**
+ * Generates a valid Microsoft Word OpenXML (.docx) Blob cleanly inside the browser
+ * using Store-mode ZIP packaging with 0.000 ms Vercel Active CPU usage.
+ */
+export function createDocxBlobInBrowser(title: string, author: string, text: string): Blob {
+  const enc = new TextEncoder();
+  const paragraphs = text
+    .split(/\n{2,}|\r?\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const contentTypesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+  const relsXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  const bodyParagraphsXml = [
+    `<w:p><w:r><w:t>${escapeXmlBrowser(title)}</w:t></w:r></w:p>`,
+    `<w:p><w:r><w:t>Author: ${escapeXmlBrowser(author)}</w:t></w:r></w:p>`,
+    ...paragraphs.map((p) => `<w:p><w:r><w:t>${escapeXmlBrowser(p)}</w:t></w:r></w:p>`),
+  ].join('\n');
+
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+${bodyParagraphsXml}
+  </w:body>
+</w:document>`;
+
+  const entries: Array<{ name: string; data: Uint8Array }> = [
+    { name: '[Content_Types].xml', data: enc.encode(contentTypesXml) },
+    { name: '_rels/.rels', data: enc.encode(relsXml) },
+    { name: 'word/document.xml', data: enc.encode(documentXml) },
+  ];
+
+  const localParts: Uint8Array[] = [];
+  const cdParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const f of entries) {
+    const nameBytes = enc.encode(f.name);
+    const crc = crc32Browser(f.data);
+
+    const localBuf = new ArrayBuffer(30);
+    const lv = new DataView(localBuf);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0, true);
+    lv.setUint16(8, 0, true); // Store mode (0)
+    lv.setUint16(10, 0, true);
+    lv.setUint16(12, 0, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, f.data.length, true);
+    lv.setUint32(22, f.data.length, true);
+    lv.setUint16(26, nameBytes.length, true);
+    lv.setUint16(28, 0, true);
+
+    const localEntry = concatUint8Arrays([new Uint8Array(localBuf), nameBytes, f.data]);
+    localParts.push(localEntry);
+
+    const cdBuf = new ArrayBuffer(46);
+    const cv = new DataView(cdBuf);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0, true);
+    cv.setUint16(10, 0, true); // Store mode (0)
+    cv.setUint16(12, 0, true);
+    cv.setUint16(14, 0, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, f.data.length, true);
+    cv.setUint32(24, f.data.length, true);
+    cv.setUint16(28, nameBytes.length, true);
+    cv.setUint16(30, 0, true);
+    cv.setUint16(32, 0, true);
+    cv.setUint16(34, 0, true);
+    cv.setUint16(36, 0, true);
+    cv.setUint32(38, 0, true);
+    cv.setUint32(42, offset, true);
+
+    cdParts.push(concatUint8Arrays([new Uint8Array(cdBuf), nameBytes]));
+    offset += localEntry.length;
+  }
+
+  const cdMerged = concatUint8Arrays(cdParts);
+  const eocdBuf = new ArrayBuffer(22);
+  const ev = new DataView(eocdBuf);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(4, 0, true);
+  ev.setUint16(6, 0, true);
+  ev.setUint16(8, entries.length, true);
+  ev.setUint16(10, entries.length, true);
+  ev.setUint32(12, cdMerged.length, true);
+  ev.setUint32(16, offset, true);
+  ev.setUint16(20, 0, true);
+
+  const fullBytes = concatUint8Arrays([...localParts, cdMerged, new Uint8Array(eocdBuf)]);
+  const safeCopy = new Uint8Array(fullBytes.byteLength);
+  safeCopy.set(fullBytes);
+  return new Blob([safeCopy], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  });
+}
+

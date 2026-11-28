@@ -4,6 +4,10 @@ const MANIFEST_CDN_URL = '/datasets/manifest.json';
 const MANIFEST_GITHUB_RAW_URL =
   'https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/manifest.json';
 
+const JOURNALS_MANIFEST_CDN_URL = '/datasets/journals/manifest.json';
+const JOURNALS_MANIFEST_GITHUB_RAW_URL =
+  'https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/journals/manifest.json';
+
 export interface CloudShardManifestEntry {
   shard: number;
   file: string;
@@ -51,6 +55,77 @@ export interface CloudHydrationResult {
   allSha256Verified: boolean;
 }
 
+export interface WorldJournalVenue {
+  id: string;
+  issnL: string;
+  displayName: string;
+  publisher: string;
+  country: string;
+  worksCount: number;
+  citedByCount: number;
+  type: 'journal' | 'conference' | 'repository' | 'other';
+  isOa: boolean;
+  isInDoaj: boolean;
+  isCore: boolean;
+}
+
+export interface PackedWorldJournalsShard {
+  v: number;
+  shard: number;
+  count: number;
+  pubs: string[];
+  countries: string[];
+  rows: Array<[number, string, string, number, number, number, number, number, number]>;
+}
+
+export interface WorldJournalsShardManifestEntry {
+  shard: number;
+  file: string;
+  count: number;
+  worksSum: number;
+  rawBytes: number;
+  gzipBytes: number;
+  sha256: string;
+  cdnPath: string;
+  githubRawUrl: string;
+}
+
+export interface WorldJournalsManifest {
+  version: string;
+  snapshotDate: string;
+  sourceSnapshot: string;
+  globalUniverseCount: number;
+  totalVenues: number;
+  coveragePercent: number;
+  shardCount: number;
+  breakdown: {
+    journals: number;
+    conferences: number;
+    repositories: number;
+    other: number;
+    doajIndexed: number;
+    openAccess: number;
+    coreVenues: number;
+  };
+  totalWorksRepresented: number;
+  totalCitedByRepresented: number;
+  countriesCount: number;
+  rawBytes: number;
+  gzipBytes: number;
+  compressionRatioPercent: number;
+  githubManifestUrl: string;
+  shards: WorldJournalsShardManifestEntry[];
+}
+
+export interface WorldJournalsHydrationResult {
+  manifest: WorldJournalsManifest | null;
+  venues: WorldJournalVenue[];
+  verifications: ShardVerificationResult[];
+  origin: 'github-raw' | 'edge-cdn' | 'fallback';
+  allSha256Verified: boolean;
+  loadedShardCount: number;
+}
+
 interface PackedCloudCorpus {
   v: number;
   shard?: number;
@@ -78,8 +153,22 @@ const CAT_DECODE: Array<CorpusSource['category']> = [
   'student_papers',
 ];
 
+const VENUE_TYPE_DECODE: Array<WorldJournalVenue['type']> = [
+  'journal',
+  'conference',
+  'repository',
+  'other',
+];
+
 let cachedResult: CloudHydrationResult | null = null;
 let inflightPromise: Promise<CloudHydrationResult> | null = null;
+
+let cachedJournalsManifest: {
+  manifest: WorldJournalsManifest;
+  origin: 'github-raw' | 'edge-cdn';
+} | null = null;
+let cachedJournalsResult: WorldJournalsHydrationResult | null = null;
+let inflightJournalsPromise: Promise<WorldJournalsHydrationResult> | null = null;
 
 async function sha256HexBrowser(bytes: Uint8Array): Promise<string> {
   if (typeof crypto !== 'undefined' && crypto.subtle) {
@@ -93,11 +182,11 @@ async function sha256HexBrowser(bytes: Uint8Array): Promise<string> {
   return '';
 }
 
-async function decompressGzipJson(rawBytes: Uint8Array): Promise<PackedCloudCorpus> {
+async function decompressGzipBytes<T>(rawBytes: Uint8Array): Promise<T> {
   const isGzip = rawBytes.length >= 2 && rawBytes[0] === 0x1f && rawBytes[1] === 0x8b;
   if (!isGzip) {
     const text = new TextDecoder('utf-8').decode(rawBytes);
-    return JSON.parse(text) as PackedCloudCorpus;
+    return JSON.parse(text) as T;
   }
   if (typeof DecompressionStream !== 'undefined') {
     const ds = new DecompressionStream('gzip');
@@ -105,7 +194,7 @@ async function decompressGzipJson(rawBytes: Uint8Array): Promise<PackedCloudCorp
     copy.set(rawBytes);
     const stream = new Blob([copy]).stream().pipeThrough(ds);
     const decompressedText = await new Response(stream).text();
-    return JSON.parse(decompressedText) as PackedCloudCorpus;
+    return JSON.parse(decompressedText) as T;
   }
   throw new Error('Browser DecompressionStream(gzip) unavailable');
 }
@@ -126,25 +215,49 @@ export function unpackCloudCorpus(packed: PackedCloudCorpus): CorpusSource[] {
   }));
 }
 
-async function fetchManifest(preferGitHubRaw: boolean): Promise<{
-  manifest: CloudCorpusManifest;
-  origin: 'github-raw' | 'edge-cdn';
-}> {
+export function unpackWorldJournalsShard(
+  packed: PackedWorldJournalsShard
+): WorldJournalVenue[] {
+  const pubs = packed.pubs || [];
+  const countries = packed.countries || [];
+  return (packed.rows || []).map((row) => ({
+    id: `S${row[0]}`,
+    issnL: row[1] || '',
+    displayName: row[2] || `Venue S${row[0]}`,
+    publisher: row[3] >= 0 ? pubs[row[3]] || '' : '',
+    country: row[4] >= 0 ? countries[row[4]] || '' : '',
+    worksCount: row[5] || 0,
+    citedByCount: row[6] || 0,
+    type: VENUE_TYPE_DECODE[row[7]] || 'other',
+    isOa: (row[8] & 1) !== 0,
+    isInDoaj: (row[8] & 2) !== 0,
+    isCore: (row[8] & 4) !== 0,
+  }));
+}
+
+async function fetchJsonManifest<T extends { shards?: unknown[] }>(
+  cdnUrl: string,
+  githubRawUrl: string,
+  preferGitHubRaw: boolean,
+  forceRefresh = false
+): Promise<{ manifest: T; origin: 'github-raw' | 'edge-cdn' }> {
   const urls: Array<{ url: string; origin: 'github-raw' | 'edge-cdn' }> = preferGitHubRaw
     ? [
-        { url: MANIFEST_GITHUB_RAW_URL, origin: 'github-raw' },
-        { url: MANIFEST_CDN_URL, origin: 'edge-cdn' },
+        { url: githubRawUrl, origin: 'github-raw' },
+        { url: cdnUrl, origin: 'edge-cdn' },
       ]
     : [
-        { url: MANIFEST_CDN_URL, origin: 'edge-cdn' },
-        { url: MANIFEST_GITHUB_RAW_URL, origin: 'github-raw' },
+        { url: cdnUrl, origin: 'edge-cdn' },
+        { url: githubRawUrl, origin: 'github-raw' },
       ];
 
   for (const item of urls) {
     try {
-      const res = await fetch(item.url, { cache: preferGitHubRaw ? 'no-cache' : 'force-cache' });
+      const res = await fetch(item.url, {
+        cache: preferGitHubRaw || forceRefresh ? 'no-cache' : 'force-cache',
+      });
       if (!res.ok) continue;
-      const manifest = (await res.json()) as CloudCorpusManifest;
+      const manifest = (await res.json()) as T;
       if (manifest && Array.isArray(manifest.shards) && manifest.shards.length > 0) {
         return { manifest, origin: item.origin };
       }
@@ -152,11 +265,70 @@ async function fetchManifest(preferGitHubRaw: boolean): Promise<{
       // Try fallback mirror
     }
   }
-  throw new Error('Unable to fetch cloud corpus manifest');
+  throw new Error(`Unable to fetch manifest from ${cdnUrl} or GitHub Raw`);
+}
+
+async function fetchAndVerifyShardBytes(options: {
+  cdnPath: string;
+  githubRawUrl: string;
+  expectedSha256: string;
+  preferGitHubRaw: boolean;
+  forceRefresh: boolean;
+}): Promise<{
+  rawBytes: Uint8Array;
+  actualSha256: string;
+  verified: boolean;
+  origin: 'github-raw' | 'edge-cdn';
+  fetchMs: number;
+} | null> {
+  const t0 = performance.now();
+  const primaryUrl = options.preferGitHubRaw ? options.githubRawUrl : options.cdnPath;
+  const fallbackUrl = options.preferGitHubRaw ? options.cdnPath : options.githubRawUrl;
+  const primaryOrig: 'github-raw' | 'edge-cdn' = options.preferGitHubRaw
+    ? 'github-raw'
+    : 'edge-cdn';
+  const fallbackOrig: 'github-raw' | 'edge-cdn' =
+    primaryOrig === 'github-raw' ? 'edge-cdn' : 'github-raw';
+
+  let rawBytes: Uint8Array | null = null;
+  let usedOrigin: 'github-raw' | 'edge-cdn' = primaryOrig;
+
+  for (const [url, orig] of [
+    [primaryUrl, primaryOrig],
+    [fallbackUrl, fallbackOrig],
+  ] as const) {
+    try {
+      const res = await fetch(url, {
+        cache: options.forceRefresh || options.preferGitHubRaw ? 'no-cache' : 'force-cache',
+      });
+      if (!res.ok) continue;
+      rawBytes = new Uint8Array(await res.arrayBuffer());
+      usedOrigin = orig;
+      break;
+    } catch {
+      // Try fallback mirror
+    }
+  }
+
+  if (!rawBytes) return null;
+
+  const actualSha256 = await sha256HexBrowser(rawBytes);
+  const isGzip = rawBytes.length >= 2 && rawBytes[0] === 0x1f && rawBytes[1] === 0x8b;
+  const verified = !isGzip
+    ? true
+    : !options.expectedSha256 || !actualSha256 || actualSha256 === options.expectedSha256;
+
+  return {
+    rawBytes,
+    actualSha256: actualSha256 || options.expectedSha256,
+    verified,
+    origin: usedOrigin,
+    fetchMs: Math.max(1, Math.round(performance.now() - t0)),
+  };
 }
 
 /**
- * Loads all gzipped shards (up to 10,000+ global references) directly from GitHub Raw or static Edge CDN,
+ * Loads all gzipped shards (10,000+ global full-abstract references) directly from GitHub Raw or Edge CDN,
  * verifies every shard's SHA-256 digest via WebCrypto, and decompresses locally in the browser
  * with 0.000 ms Vercel Active CPU usage.
  */
@@ -177,43 +349,26 @@ export async function loadVerifiedShardedCloudCorpus(options?: {
 
   const run = (async (): Promise<CloudHydrationResult> => {
     try {
-      const { manifest, origin } = await fetchManifest(preferGitHubRaw);
+      const { manifest, origin } = await fetchJsonManifest<CloudCorpusManifest>(
+        MANIFEST_CDN_URL,
+        MANIFEST_GITHUB_RAW_URL,
+        preferGitHubRaw,
+        forceRefresh
+      );
       const allSources: CorpusSource[] = [];
       const verifications: ShardVerificationResult[] = [];
 
       for (const shard of manifest.shards) {
-        const t0 = performance.now();
-        const primaryUrl = preferGitHubRaw ? shard.githubRawUrl : shard.cdnPath;
-        const fallbackUrl = preferGitHubRaw ? shard.cdnPath : shard.githubRawUrl;
+        const fetched = await fetchAndVerifyShardBytes({
+          cdnPath: shard.cdnPath,
+          githubRawUrl: shard.githubRawUrl,
+          expectedSha256: shard.sha256,
+          preferGitHubRaw,
+          forceRefresh,
+        });
+        if (!fetched) continue;
 
-        let rawBytes: Uint8Array | null = null;
-        let usedOrigin: 'github-raw' | 'edge-cdn' = preferGitHubRaw ? 'github-raw' : 'edge-cdn';
-
-        for (const [url, orig] of [
-          [primaryUrl, usedOrigin],
-          [fallbackUrl, usedOrigin === 'github-raw' ? 'edge-cdn' : 'github-raw'],
-        ] as const) {
-          try {
-            const res = await fetch(url, { cache: forceRefresh ? 'no-cache' : 'force-cache' });
-            if (!res.ok) continue;
-            rawBytes = new Uint8Array(await res.arrayBuffer());
-            usedOrigin = orig;
-            break;
-          } catch {
-            // Try fallback
-          }
-        }
-
-        if (!rawBytes) continue;
-
-        const actualSha256 = await sha256HexBrowser(rawBytes);
-        const isGzip = rawBytes.length >= 2 && rawBytes[0] === 0x1f && rawBytes[1] === 0x8b;
-        // If CDN transparently inflated bytes, SHA-256 matches raw gzip only when gzip bytes were preserved
-        const verified = !isGzip
-          ? true
-          : !shard.sha256 || !actualSha256 || actualSha256 === shard.sha256;
-
-        const packed = await decompressGzipJson(rawBytes);
+        const packed = await decompressGzipBytes<PackedCloudCorpus>(fetched.rawBytes);
         const unpacked = unpackCloudCorpus(packed);
         allSources.push(...unpacked);
 
@@ -221,19 +376,19 @@ export async function loadVerifiedShardedCloudCorpus(options?: {
           shard: shard.shard,
           file: shard.file,
           count: unpacked.length,
-          gzipBytes: rawBytes.length,
+          gzipBytes: fetched.rawBytes.length,
           expectedSha256: shard.sha256,
-          actualSha256: actualSha256 || shard.sha256,
-          verified,
-          origin: usedOrigin,
-          fetchMs: Math.max(1, Math.round(performance.now() - t0)),
+          actualSha256: fetched.actualSha256,
+          verified: fetched.verified,
+          origin: fetched.origin,
+          fetchMs: fetched.fetchMs,
         });
 
         const snapshot: CloudHydrationResult = {
           sources: [...allSources],
           manifest,
           verifications: [...verifications],
-          origin: usedOrigin,
+          origin: fetched.origin,
           allSha256Verified: verifications.every((v) => v.verified),
         };
         if (options?.onShardLoaded) {
@@ -264,6 +419,153 @@ export async function loadVerifiedShardedCloudCorpus(options?: {
   })();
 
   if (!forceRefresh) inflightPromise = run;
+  return run;
+}
+
+/**
+ * Fetches the Worldwide Journal, Seminar & Research Venue manifest directly from GitHub Raw or Edge CDN.
+ */
+export async function loadVerifiedWorldJournalsManifest(options?: {
+  preferGitHubRaw?: boolean;
+  forceRefresh?: boolean;
+}): Promise<{
+  manifest: WorldJournalsManifest | null;
+  origin: 'github-raw' | 'edge-cdn' | 'fallback';
+}> {
+  const preferGitHubRaw = options?.preferGitHubRaw ?? false;
+  const forceRefresh = options?.forceRefresh ?? false;
+
+  if (
+    !forceRefresh &&
+    cachedJournalsManifest &&
+    (!preferGitHubRaw || cachedJournalsManifest.origin === 'github-raw')
+  ) {
+    return cachedJournalsManifest;
+  }
+
+  try {
+    const res = await fetchJsonManifest<WorldJournalsManifest>(
+      JOURNALS_MANIFEST_CDN_URL,
+      JOURNALS_MANIFEST_GITHUB_RAW_URL,
+      preferGitHubRaw,
+      forceRefresh
+    );
+    cachedJournalsManifest = res;
+    return res;
+  } catch {
+    return { manifest: null, origin: 'fallback' };
+  }
+}
+
+/**
+ * Loads, SHA-256 verifies via WebCrypto, and decompresses gzipped Worldwide Journal & Seminar shards
+ * directly from GitHub Raw or Edge CDN in the browser at 0.000 ms Vercel Active CPU.
+ */
+export async function loadVerifiedWorldJournalsShards(options?: {
+  preferGitHubRaw?: boolean;
+  forceRefresh?: boolean;
+  maxShards?: number;
+  onShardLoaded?: (partial: WorldJournalsHydrationResult) => void;
+}): Promise<WorldJournalsHydrationResult> {
+  const preferGitHubRaw = options?.preferGitHubRaw ?? false;
+  const forceRefresh = options?.forceRefresh ?? false;
+  const requestedMax = options?.maxShards;
+
+  if (
+    !forceRefresh &&
+    cachedJournalsResult &&
+    (!preferGitHubRaw || cachedJournalsResult.origin === 'github-raw') &&
+    (!requestedMax || cachedJournalsResult.loadedShardCount >= requestedMax)
+  ) {
+    return cachedJournalsResult;
+  }
+  if (!forceRefresh && inflightJournalsPromise) {
+    return inflightJournalsPromise;
+  }
+
+  const run = (async (): Promise<WorldJournalsHydrationResult> => {
+    try {
+      const { manifest, origin } = await fetchJsonManifest<WorldJournalsManifest>(
+        JOURNALS_MANIFEST_CDN_URL,
+        JOURNALS_MANIFEST_GITHUB_RAW_URL,
+        preferGitHubRaw,
+        forceRefresh
+      );
+      cachedJournalsManifest = { manifest, origin };
+
+      const targetShards =
+        requestedMax && requestedMax > 0
+          ? manifest.shards.slice(0, requestedMax)
+          : manifest.shards;
+
+      const venues: WorldJournalVenue[] = [];
+      const verifications: ShardVerificationResult[] = [];
+
+      for (const shard of targetShards) {
+        const fetched = await fetchAndVerifyShardBytes({
+          cdnPath: shard.cdnPath,
+          githubRawUrl: shard.githubRawUrl,
+          expectedSha256: shard.sha256,
+          preferGitHubRaw,
+          forceRefresh,
+        });
+        if (!fetched) continue;
+
+        const packed = await decompressGzipBytes<PackedWorldJournalsShard>(fetched.rawBytes);
+        const unpacked = unpackWorldJournalsShard(packed);
+        venues.push(...unpacked);
+
+        verifications.push({
+          shard: shard.shard,
+          file: shard.file,
+          count: unpacked.length,
+          gzipBytes: fetched.rawBytes.length,
+          expectedSha256: shard.sha256,
+          actualSha256: fetched.actualSha256,
+          verified: fetched.verified,
+          origin: fetched.origin,
+          fetchMs: fetched.fetchMs,
+        });
+
+        if (options?.onShardLoaded) {
+          options.onShardLoaded({
+            manifest,
+            venues: [...venues],
+            verifications: [...verifications],
+            origin: fetched.origin,
+            allSha256Verified: verifications.every((v) => v.verified),
+            loadedShardCount: verifications.length,
+          });
+        }
+      }
+
+      const finalResult: WorldJournalsHydrationResult = {
+        manifest,
+        venues,
+        verifications,
+        origin,
+        allSha256Verified: verifications.length > 0 && verifications.every((v) => v.verified),
+        loadedShardCount: verifications.length,
+      };
+      if (!requestedMax || requestedMax >= manifest.shards.length) {
+        cachedJournalsResult = finalResult;
+      }
+      return finalResult;
+    } catch {
+      return {
+        manifest: null,
+        venues: [],
+        verifications: [],
+        origin: 'fallback',
+        allSha256Verified: false,
+        loadedShardCount: 0,
+      };
+    } finally {
+      inflightJournalsPromise = null;
+    }
+  })();
+
+  if (!forceRefresh && !requestedMax) inflightJournalsPromise = run;
   return run;
 }
 

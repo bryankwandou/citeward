@@ -2,6 +2,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { Plus, Trash2, Layers, Upload } from 'lucide-react';
+import { parseDocumentInBrowser } from '@/lib/browser-document-parser';
 import {
   computeMinHashSignature,
   computeWinnowFingerprints,
@@ -51,12 +52,32 @@ export default function MatrixPage() {
   const [newText, setNewText] = useState('');
   const [uploadingCohortFile, setUploadingCohortFile] = useState(false);
   const cohortFileRef = useRef<HTMLInputElement | null>(null);
+  const docSeqRef = useRef(1);
+
+  const nextDocId = () => {
+    const seq = docSeqRef.current++;
+    return `doc-uploaded-${seq}`;
+  };
 
   const handleCohortFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingCohortFile(true);
     try {
+      const localParsed = await parseDocumentInBrowser(file).catch(() => null);
+      if (localParsed && localParsed.text.trim()) {
+        setDocs((prev) => [
+          ...prev,
+          {
+            id: nextDocId(),
+            title: localParsed.extractedTitle || file.name,
+            student: `Uploaded ${String(localParsed.fileType).toUpperCase()}`,
+            text: localParsed.text.slice(0, 60000),
+          },
+        ]);
+        return;
+      }
+
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch('/api/parse-document?mode=reference', {
@@ -68,7 +89,7 @@ export default function MatrixPage() {
         setDocs((prev) => [
           ...prev,
           {
-            id: `doc-${Date.now()}`,
+            id: nextDocId(),
             title: data.parsed.extractedTitle || file.name,
             student: `Uploaded ${String(data.parsed.fileType).toUpperCase()}`,
             text: data.parsed.text.slice(0, 60000),
@@ -81,7 +102,7 @@ export default function MatrixPage() {
         setDocs((prev) => [
           ...prev,
           {
-            id: `doc-${Date.now()}`,
+            id: nextDocId(),
             title: file.name,
             student: 'Uploaded File',
             text: raw.slice(0, 60000),
@@ -162,7 +183,7 @@ export default function MatrixPage() {
     setDocs((prev) => [
       ...prev,
       {
-        id: `doc-${Date.now()}`,
+        id: nextDocId(),
         title: newTitle.trim() || `Submission ${String.fromCharCode(65 + prev.length)}`,
         student: newStudent.trim() || `Student ${1200 + prev.length}`,
         text: newText.trim(),
@@ -186,10 +207,13 @@ export default function MatrixPage() {
 
   return (
     <div className="py-12 max-w-[1380px] mx-auto px-4 sm:px-6 space-y-10">
-      <div>
-        <div className="cw-kicker mb-2 flex items-center gap-2">
+      <div className="cw-reveal">
+        <div className="cw-kicker mb-2 flex flex-wrap items-center gap-2">
           <Layers className="w-3.5 h-3.5 text-[var(--cw-corpus)]" />
           <span>COHORT COLLUSION &amp; PAIRWISE RESEMBLANCE MATRIX</span>
+          <span className="px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] text-[var(--cw-good)] font-semibold">
+            0ms Vercel CPU &middot; Local Browser Engine
+          </span>
         </div>
         <h1 className="cw-h1">Cross-Document Winnowing &amp; MinHash Matrix</h1>
         <p className="cw-lead mt-2">
@@ -201,7 +225,7 @@ export default function MatrixPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         <div className="lg:col-span-7 space-y-6">
-          <div className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-x-auto">
+          <div className="cw-lift cw-reveal cw-d1 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] overflow-x-auto">
             <div className="px-4 py-3 border-b border-[var(--cw-rule)] bg-[var(--cw-sunken)] flex items-center justify-between">
               <span className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
                 Pairwise Containment Matrix ({docs.length} &times; {docs.length} Documents)
@@ -291,7 +315,7 @@ export default function MatrixPage() {
 
           <form
             onSubmit={handleAddDoc}
-            className="rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 space-y-3"
+            className="cw-lift cw-reveal cw-d2 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-5 space-y-3"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="cw-mono text-xs font-semibold uppercase text-[var(--cw-ink-2)]">
@@ -350,7 +374,7 @@ export default function MatrixPage() {
           </form>
         </div>
 
-        <div className="lg:col-span-5 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] p-5 space-y-4">
+        <div className="lg:col-span-5 cw-lift cw-reveal cw-d2 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] shadow-[var(--cw-e2)] p-5 space-y-4">
           <div className="cw-kicker">SELECTED PAIR FORENSIC DIFF</div>
           {docA && docB ? (
             <>

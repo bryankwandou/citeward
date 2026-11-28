@@ -6,6 +6,8 @@ import {
   verifySolanaAttestationTx,
 } from '@/lib/solana';
 
+export const maxDuration = 5;
+
 const AnchorSchema = z.object({
   action: z.literal('anchor'),
   payload: z.object({

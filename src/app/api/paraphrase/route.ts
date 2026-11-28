@@ -6,9 +6,12 @@ import {
 } from '@/lib/forensics-and-ecosystem';
 import { runManuscriptAudit } from '@/lib/similarity-engine';
 
+export const maxDuration = 5;
+
 const ParaphraseSchema = z.object({
   text: z.string().min(10).max(50000),
   mode: z.enum(['empirical_academic', 'concise_direct']).default('empirical_academic'),
+  rewriteOnly: z.boolean().default(false),
 });
 
 export async function POST(req: NextRequest) {
@@ -22,19 +25,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { text, mode } = parsed.data;
-    const beforeAudit = runManuscriptAudit(text, {
-      excludeQuotes: true,
-      excludeBibliography: true,
-      minWordMatch: 8,
-    });
-    const beforeTells = analyzeAiTells(text);
+    const { text, mode, rewriteOnly } = parsed.data;
+    const apiKey = (process.env.GROQ_API_KEY || '').trim();
 
-    // Deterministic baseline rewrite
+    // Zero-Vercel-CPU fast path: if rewriteOnly is requested and no external LLM key is configured, return immediately (<1ms CPU)
+    if (rewriteOnly && !apiKey) {
+      return NextResponse.json({
+        ok: true,
+        rewritten: humanizeAndParaphraseDeterministically(text),
+        llmUsed: false,
+      });
+    }
+
     let rewritten = humanizeAndParaphraseDeterministically(text);
 
-    // Optional live Groq LLM natural human rewrite if configured
-    const apiKey = (process.env.GROQ_API_KEY || '').trim();
     if (apiKey) {
       try {
         const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -59,7 +63,7 @@ export async function POST(req: NextRequest) {
               },
             ],
           }),
-          signal: AbortSignal.timeout(5500),
+          signal: AbortSignal.timeout(4500),
         });
         if (res.ok) {
           const data = await res.json();
@@ -72,6 +76,22 @@ export async function POST(req: NextRequest) {
         // Fallback to deterministic rewrite
       }
     }
+
+    // Skip heavy server-side before/after 500-ref audits when client already computes liveAnalysis locally
+    if (rewriteOnly) {
+      return NextResponse.json({
+        ok: true,
+        rewritten,
+        llmUsed: Boolean(apiKey),
+      });
+    }
+
+    const beforeAudit = runManuscriptAudit(text, {
+      excludeQuotes: true,
+      excludeBibliography: true,
+      minWordMatch: 8,
+    });
+    const beforeTells = analyzeAiTells(text);
 
     const afterAudit = runManuscriptAudit(rewritten, {
       excludeQuotes: true,

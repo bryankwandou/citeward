@@ -7,7 +7,10 @@ import {
   GLOBAL_TURNITIN_CORPUS_500,
   SAMPLE_MANUSCRIPTS,
 } from '../src/lib/corpus';
-import { unpackCloudCorpus } from '../src/lib/cloud-corpus-loader';
+import {
+  unpackCloudCorpus,
+  unpackWorldJournalsShard,
+} from '../src/lib/cloud-corpus-loader';
 import { runHeadToHead20BenchmarkSuite } from '../src/lib/head-to-head-benchmark';
 import {
   extractBibliographyQueries,
@@ -416,6 +419,47 @@ async function main() {
   );
   console.log(
     `[PASS] 10,000-Reference Sharded GitHub Cloud Corpus (4/4 SHA-256 verified, ${(manifest.gzipBytes / 1024).toFixed(1)} KB gzipped) & Inverted Index Audit verified (${audit10k.overallSimilarityPercent}% exact, ${cloudMs}ms cold-index).`
+  );
+
+  // Verify Worldwide Journal & Seminar GitHub Registry (>= 99.1% Global Coverage, 6/6 SHA-256 Shards)
+  const journalsManifestPath = path.join(
+    process.cwd(),
+    'public',
+    'datasets',
+    'journals',
+    'manifest.json'
+  );
+  const journalsManifest = JSON.parse(fs.readFileSync(journalsManifestPath, 'utf8'));
+  assert(
+    journalsManifest.coveragePercent >= 99.1 &&
+      journalsManifest.totalVenues >= 247000 &&
+      journalsManifest.shards.length === 6,
+    `Expected >= 99.1% coverage (>= 247,000 venues across 6 shards), got ${journalsManifest.coveragePercent}% (${journalsManifest.totalVenues} across ${journalsManifest.shards?.length})`
+  );
+
+  let totalUnpackedVenues = 0;
+  for (const js of journalsManifest.shards) {
+    const jPath = path.join(process.cwd(), 'public', 'datasets', 'journals', js.file);
+    const jGzBuf = fs.readFileSync(jPath);
+    const jSha256 = crypto.createHash('sha256').update(jGzBuf).digest('hex');
+    assert(
+      jSha256 === js.sha256,
+      `SHA-256 mismatch on ${js.file}: expected ${js.sha256}, got ${jSha256}`
+    );
+    const packedJ = JSON.parse(zlib.gunzipSync(jGzBuf).toString('utf8'));
+    const unpackedJ = unpackWorldJournalsShard(packedJ);
+    assert(
+      unpackedJ.length === js.count,
+      `Journal shard ${js.file} count mismatch: expected ${js.count}, got ${unpackedJ.length}`
+    );
+    totalUnpackedVenues += unpackedJ.length;
+  }
+  assert(
+    totalUnpackedVenues === journalsManifest.totalVenues,
+    `Expected ${journalsManifest.totalVenues} unpacked world venues, got ${totalUnpackedVenues}`
+  );
+  console.log(
+    `[PASS] Worldwide Journal & Seminar GitHub Registry: ${journalsManifest.totalVenues.toLocaleString()} venues (${journalsManifest.coveragePercent}% global coverage, 6/6 SHA-256 verified, ${(journalsManifest.gzipBytes / 1048576).toFixed(2)} MB gzip-L9).`
   );
 }
 

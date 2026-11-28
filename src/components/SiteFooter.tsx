@@ -32,6 +32,11 @@ export function SiteFooter() {
                 </Link>
               </li>
               <li>
+                <Link href="/benchmark" className="hover:text-[var(--cw-ink)]">
+                  20x500 Benchmark &amp; Global Registry
+                </Link>
+              </li>
+              <li>
                 <Link href="/paraphrase" className="hover:text-[var(--cw-ink)]">
                   Anti-AI Paraphrase Studio
                 </Link>
@@ -85,7 +90,7 @@ export function SiteFooter() {
         </div>
 
         <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[var(--cw-ink-3)] cw-mono">
-          <span>Citeward v1.4 · Scriptorium Folio Design System · WCAG AA Measured</span>
+          <span>Citeward v2.0 &middot; Scriptorium Folio Design System &middot; WCAG AA Measured</span>
           <span>SPL Memo Program: MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr</span>
         </div>
       </div>
