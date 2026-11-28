@@ -1,14 +1,14 @@
 {
-  "version": "3.0",
-  "generatedAt": "2026-11-24T16:14:25.882Z",
-  "totalReferences": 10000,
-  "shardCount": 4,
+  "version": "4.0",
+  "generatedAt": "2026-11-28T06:13:09.000Z",
+  "totalReferences": 30000,
+  "shardCount": 12,
   "categories": {
-    "publications": 8018,
+    "publications": 27419,
     "internet": 169,
-    "student_papers": 1813
+    "student_papers": 2412
   },
-  "repositoriesCount": 33,
+  "repositoriesCount": 34,
   "repositories": [
     "ACM Digital Library / Crossref",
     "IEEE Xplore / OpenAlex",
@@ -42,11 +42,12 @@
     "PLOS Open Access Corpus",
     "Crossref Global Journal Registry",
     "Crossref Conference & Seminar Proceedings",
-    "HAL Proceedings & Seminars"
+    "HAL Proceedings & Seminars",
+    "HAL Theses & Dissertations (CNRS)"
   ],
-  "rawBytes": 8208547,
-  "gzipBytes": 2770084,
-  "compressionRatioPercent": 66.3,
+  "rawBytes": 27164471,
+  "gzipBytes": 9183327,
+  "compressionRatioPercent": 66.2,
   "federatedLiveRegistries": [
     {
       "name": "OpenAlex Global Scholarly Graph",
@@ -122,6 +123,86 @@
       "sha256": "262612843657a73a730c02ab9a5d38970a4fba22f5702469d8f7c840b61281e7",
       "cdnPath": "/datasets/shards/shard-04.min.json.gz",
       "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-04.min.json.gz"
+    },
+    {
+      "shard": 5,
+      "file": "shard-05.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2333232,
+      "gzipBytes": 700725,
+      "sha256": "3b752e8e96500eef12d893ddb47317af21cce037777b7175b3ae1c758db1c24d",
+      "cdnPath": "/datasets/shards/shard-05.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-05.min.json.gz"
+    },
+    {
+      "shard": 6,
+      "file": "shard-06.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2370590,
+      "gzipBytes": 617021,
+      "sha256": "64f5296461027d38f4db0cdc42194c7b938bd81fb64a16ea11481d2f37055fef",
+      "cdnPath": "/datasets/shards/shard-06.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-06.min.json.gz"
+    },
+    {
+      "shard": 7,
+      "file": "shard-07.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2343416,
+      "gzipBytes": 711407,
+      "sha256": "b5ad77d129d53b0199e613ec04b47bd2eb17138c8446f8a349875fc8c01f2de2",
+      "cdnPath": "/datasets/shards/shard-07.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-07.min.json.gz"
+    },
+    {
+      "shard": 8,
+      "file": "shard-08.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2291821,
+      "gzipBytes": 893278,
+      "sha256": "21a5c4eea73666e3f5e8c72a22608da042084a203ffa17fead4b7749855205a9",
+      "cdnPath": "/datasets/shards/shard-08.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-08.min.json.gz"
+    },
+    {
+      "shard": 9,
+      "file": "shard-09.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2315153,
+      "gzipBytes": 903484,
+      "sha256": "66bd592f83c1114a59db95d17ce1d5db14f31d34c2d7a2687521c0c9127dc2ed",
+      "cdnPath": "/datasets/shards/shard-09.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-09.min.json.gz"
+    },
+    {
+      "shard": 10,
+      "file": "shard-10.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2398199,
+      "gzipBytes": 896724,
+      "sha256": "e5bd5a4563a274d6fa1ae8f4557e24c71120767a814305e50ac44246c18b6636",
+      "cdnPath": "/datasets/shards/shard-10.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-10.min.json.gz"
+    },
+    {
+      "shard": 11,
+      "file": "shard-11.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2539077,
+      "gzipBytes": 887568,
+      "sha256": "a631ced0b7f9a8b7fbb033089f098728b379c3b0ada593802cf015f05336b36c",
+      "cdnPath": "/datasets/shards/shard-11.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-11.min.json.gz"
+    },
+    {
+      "shard": 12,
+      "file": "shard-12.min.json.gz",
+      "count": 2500,
+      "rawBytes": 2364436,
+      "gzipBytes": 803036,
+      "sha256": "c58872483cc6d187de2c8934971e76e546c078456993a7ffba75a83745f7b0eb",
+      "cdnPath": "/datasets/shards/shard-12.min.json.gz",
+      "githubRawUrl": "https://raw.githubusercontent.com/bryankwandou/citeward/feat/citeward-mvp/public/datasets/shards/shard-12.min.json.gz"
     }
   ]
 }

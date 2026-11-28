@@ -126,6 +126,11 @@ export interface WorldJournalsHydrationResult {
   loadedShardCount: number;
 }
 
+export interface VerifiedVenueMatch {
+  venue: WorldJournalVenue;
+  matchReason: 'issn' | 'title_citation';
+}
+
 interface PackedCloudCorpus {
   v: number;
   shard?: number;
@@ -328,7 +333,36 @@ async function fetchAndVerifyShardBytes(options: {
 }
 
 /**
- * Loads all gzipped shards (10,000+ global full-abstract references) directly from GitHub Raw or Edge CDN,
+ * Fetches only the Full-Abstract Corpus manifest directly from GitHub Raw or Edge CDN.
+ */
+export async function loadVerifiedCloudCorpusManifest(options?: {
+  preferGitHubRaw?: boolean;
+  forceRefresh?: boolean;
+}): Promise<{
+  manifest: CloudCorpusManifest | null;
+  origin: 'github-raw' | 'edge-cdn' | 'fallback';
+}> {
+  const preferGitHubRaw = options?.preferGitHubRaw ?? true;
+  const forceRefresh = options?.forceRefresh ?? false;
+
+  if (cachedResult?.manifest && (!preferGitHubRaw || cachedResult.origin === 'github-raw')) {
+    return { manifest: cachedResult.manifest, origin: cachedResult.origin };
+  }
+
+  try {
+    return await fetchJsonManifest<CloudCorpusManifest>(
+      MANIFEST_CDN_URL,
+      MANIFEST_GITHUB_RAW_URL,
+      preferGitHubRaw,
+      forceRefresh
+    );
+  } catch {
+    return { manifest: null, origin: 'fallback' };
+  }
+}
+
+/**
+ * Loads all gzipped shards (30,000+ global full-abstract references) directly from GitHub Raw or Edge CDN,
  * verifies every shard's SHA-256 digest via WebCrypto, and decompresses locally in the browser
  * with 0.000 ms Vercel Active CPU usage.
  */
@@ -337,7 +371,7 @@ export async function loadVerifiedShardedCloudCorpus(options?: {
   forceRefresh?: boolean;
   onShardLoaded?: (partial: CloudHydrationResult) => void;
 }): Promise<CloudHydrationResult> {
-  const preferGitHubRaw = options?.preferGitHubRaw ?? false;
+  const preferGitHubRaw = options?.preferGitHubRaw ?? true;
   const forceRefresh = options?.forceRefresh ?? false;
 
   if (!forceRefresh && cachedResult && (!preferGitHubRaw || cachedResult.origin === 'github-raw')) {
@@ -432,7 +466,7 @@ export async function loadVerifiedWorldJournalsManifest(options?: {
   manifest: WorldJournalsManifest | null;
   origin: 'github-raw' | 'edge-cdn' | 'fallback';
 }> {
-  const preferGitHubRaw = options?.preferGitHubRaw ?? false;
+  const preferGitHubRaw = options?.preferGitHubRaw ?? true;
   const forceRefresh = options?.forceRefresh ?? false;
 
   if (
@@ -467,7 +501,7 @@ export async function loadVerifiedWorldJournalsShards(options?: {
   maxShards?: number;
   onShardLoaded?: (partial: WorldJournalsHydrationResult) => void;
 }): Promise<WorldJournalsHydrationResult> {
-  const preferGitHubRaw = options?.preferGitHubRaw ?? false;
+  const preferGitHubRaw = options?.preferGitHubRaw ?? true;
   const forceRefresh = options?.forceRefresh ?? false;
   const requestedMax = options?.maxShards;
 
@@ -570,9 +604,55 @@ export async function loadVerifiedWorldJournalsShards(options?: {
 }
 
 /**
+ * Cross-verifies ISSNs and cited journal / conference venue names in a manuscript against
+ * the hydrated GitHub Worldwide Journal Registry inside the browser (0ms Vercel CPU).
+ */
+export function crossVerifyDocumentVenues(
+  text: string,
+  venues: WorldJournalVenue[]
+): VerifiedVenueMatch[] {
+  if (!text || venues.length === 0) return [];
+  const matches: VerifiedVenueMatch[] = [];
+  const seenIds = new Set<string>();
+
+  const rawIssns = text.match(/\b\d{4}-\d{3}[\dXx]\b/g) || [];
+  if (rawIssns.length > 0) {
+    const issnTargetSet = new Set(rawIssns.map((s) => s.toUpperCase()));
+    for (const v of venues) {
+      if (v.issnL && issnTargetSet.has(v.issnL.toUpperCase()) && !seenIds.has(v.id)) {
+        seenIds.add(v.id);
+        matches.push({ venue: v, matchReason: 'issn' });
+        if (matches.length >= 12) return matches;
+      }
+    }
+  }
+
+  const normalizedDoc = ` ${text.toLowerCase().replace(/\s+/g, ' ')} `;
+  const scanLimit = Math.min(venues.length, 25000);
+  for (let i = 0; i < scanLimit; i++) {
+    const v = venues[i];
+    if (seenIds.has(v.id)) continue;
+    const rawName = v.displayName.trim();
+    if (rawName.length < 16) continue;
+    const lowerName = rawName.toLowerCase();
+    const hitPos = normalizedDoc.indexOf(lowerName);
+    if (hitPos === -1) continue;
+    const prevCh = normalizedDoc[hitPos - 1] || ' ';
+    const nextCh = normalizedDoc[hitPos + lowerName.length] || ' ';
+    if (!/[a-z0-9]/.test(prevCh) && !/[a-z0-9]/.test(nextCh)) {
+      seenIds.add(v.id);
+      matches.push({ venue: v, matchReason: 'title_citation' });
+      if (matches.length >= 12) break;
+    }
+  }
+
+  return matches;
+}
+
+/**
  * Backward-compatible helper returning all hydrated cloud references.
  */
 export async function loadCloudCorpus2500(): Promise<CorpusSource[]> {
-  const res = await loadVerifiedShardedCloudCorpus({ preferGitHubRaw: false });
+  const res = await loadVerifiedShardedCloudCorpus({ preferGitHubRaw: true });
   return res.sources;
 }

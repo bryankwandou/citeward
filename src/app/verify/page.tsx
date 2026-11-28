@@ -78,7 +78,7 @@ export default function VerifyPage() {
             aiPercent: audit.stylometry.overallAiPercent,
             wordCount: audit.totalWords,
             fingerprintCount: audit.fingerprintCount,
-            timestamp: new Date().toISOString(),
+            timestamp: audit.analyzedAt,
           },
         }),
       });
@@ -101,10 +101,13 @@ export default function VerifyPage() {
 
   return (
     <div className="py-12 max-w-[1380px] mx-auto px-4 sm:px-6 space-y-10">
-      <div>
-        <div className="cw-kicker mb-2 flex items-center gap-2">
+      <div className="cw-reveal">
+        <div className="cw-kicker mb-2 flex flex-wrap items-center gap-2">
           <ShieldCheck className="w-3.5 h-3.5 text-[var(--cw-attest)]" />
           <span>SOLANA DEVNET ON-CHAIN RECEIPT VERIFIER</span>
+          <span className="px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] text-[var(--cw-good)] font-semibold">
+            0ms Vercel CPU &middot; Local SHA-256 Preimage
+          </span>
         </div>
         <h1 className="cw-h1">Verify SPL Memo Prior-Art &amp; Integrity Seals</h1>
         <p className="cw-lead mt-2">
@@ -116,7 +119,7 @@ export default function VerifyPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Left 6 cols: On-Chain Signature Lookup */}
-        <div className="lg:col-span-6 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-6 shadow-[var(--cw-e2)] space-y-5">
+        <div className="lg:col-span-6 cw-lift cw-reveal cw-d1 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-6 shadow-[var(--cw-e2)] space-y-5">
           <div className="flex items-center justify-between gap-2">
             <h2 className="cw-h3">1. Inspect Solana Devnet Transaction</h2>
             <button
@@ -208,7 +211,7 @@ export default function VerifyPage() {
         </div>
 
         {/* Right 6 cols: Local Zero-Knowledge SHA-256 Re-Hasher */}
-        <div className="lg:col-span-6 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-6 shadow-[var(--cw-e2)] space-y-4">
+        <div className="lg:col-span-6 cw-lift cw-reveal cw-d2 rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] p-6 shadow-[var(--cw-e2)] space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="cw-h3">2. Recompute Manuscript SHA-256 Digest</h2>
             <span className="cw-mono text-xs text-[var(--cw-ink-3)] flex items-center gap-1">

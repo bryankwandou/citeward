@@ -422,11 +422,89 @@ interface CachedSourceIndex {
 
 const SOURCE_INDEX_CACHE = new Map<string, CachedSourceIndex>();
 const INVERTED_INDEXED_KEYS = new Set<string>();
-const GLOBAL_TRIGRAM_TO_SOURCE_KEYS = new Map<string, string[]>();
-const GLOBAL_BIGRAM_TO_SOURCE_KEYS = new Map<string, string[]>();
+const SOURCE_KEY_TO_SID = new Map<string, number>();
+const SID_TO_SOURCE_KEY: string[] = [];
+const GLOBAL_TRIGRAM_HASH_TO_SIDS = new Map<number, number[]>();
+const GLOBAL_BIGRAM_HASH_TO_SIDS = new Map<number, number[]>();
 
 function getSourceCacheKey(source: CorpusSource): string {
   return `${source.id}::${source.text.length}`;
+}
+
+function fnv1aUpdateStr(h: number, s: string): number {
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h;
+}
+
+function fnv1aWordPair(a: string, b: string): number {
+  let h = 0x811c9dc5;
+  h = fnv1aUpdateStr(h, a);
+  h ^= 32;
+  h = Math.imul(h, 0x01000193);
+  h = fnv1aUpdateStr(h, b);
+  return h >>> 0;
+}
+
+function fnv1aWordTriple(a: string, b: string, c: string): number {
+  let h = 0x811c9dc5;
+  h = fnv1aUpdateStr(h, a);
+  h ^= 32;
+  h = Math.imul(h, 0x01000193);
+  h = fnv1aUpdateStr(h, b);
+  h ^= 32;
+  h = Math.imul(h, 0x01000193);
+  h = fnv1aUpdateStr(h, c);
+  return h >>> 0;
+}
+
+/**
+ * Tier-A light registration: computes 32-bit FNV-1a trigram and bigram hashes with
+ * zero per-token object allocations so 30,000+ cloud references index in sub-second time.
+ * Full token/position caches (Tier-B getSourceIndex) are built lazily only for matching candidates.
+ */
+function registerSourceInInvertedIndex(source: CorpusSource): number {
+  const cacheKey = getSourceCacheKey(source);
+  const existingSid = SOURCE_KEY_TO_SID.get(cacheKey);
+  if (existingSid !== undefined) return existingSid;
+
+  const sid = SID_TO_SOURCE_KEY.length;
+  SID_TO_SOURCE_KEY.push(cacheKey);
+  SOURCE_KEY_TO_SID.set(cacheKey, sid);
+  INVERTED_INDEXED_KEYS.add(cacheKey);
+
+  const fullWords =
+    `${source.authors} ${source.year} ${source.title} ${source.publication} ${source.text}`
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) || [];
+
+  const seenTri = new Set<number>();
+  for (let i = 0; i <= fullWords.length - 3; i++) {
+    const h3 = fnv1aWordTriple(fullWords[i], fullWords[i + 1], fullWords[i + 2]);
+    if (seenTri.has(h3)) continue;
+    seenTri.add(h3);
+    const bucket = GLOBAL_TRIGRAM_HASH_TO_SIDS.get(h3);
+    if (bucket) bucket.push(sid);
+    else GLOBAL_TRIGRAM_HASH_TO_SIDS.set(h3, [sid]);
+  }
+
+  const bodyWords = source.text.toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  const seenBi = new Set<number>();
+  for (let i = 0; i <= bodyWords.length - 2; i++) {
+    const w0 = bodyWords[i];
+    const w1 = bodyWords[i + 1];
+    if (w0.length < 4 && w1.length < 4) continue;
+    const h2 = fnv1aWordPair(w0, w1);
+    if (seenBi.has(h2)) continue;
+    seenBi.add(h2);
+    const bucket = GLOBAL_BIGRAM_HASH_TO_SIDS.get(h2);
+    if (bucket) bucket.push(sid);
+    else GLOBAL_BIGRAM_HASH_TO_SIDS.set(h2, [sid]);
+  }
+
+  return sid;
 }
 
 function getSourceIndex(source: CorpusSource): CachedSourceIndex {
@@ -468,39 +546,28 @@ function getSourceIndex(source: CorpusSource): CachedSourceIndex {
   };
   SOURCE_INDEX_CACHE.set(cacheKey, built);
 
-  // Register in global inverted trigram/bigram index once for O(L_doc) candidate filtering across 2,500+ sources
   if (!INVERTED_INDEXED_KEYS.has(cacheKey)) {
-    INVERTED_INDEXED_KEYS.add(cacheKey);
-    for (const tri of srcShingleSet) {
-      const bucket = GLOBAL_TRIGRAM_TO_SOURCE_KEYS.get(tri);
-      if (bucket) bucket.push(cacheKey);
-      else GLOBAL_TRIGRAM_TO_SOURCE_KEYS.set(tri, [cacheKey]);
-    }
-    for (const bi of srcBigramPos.keys()) {
-      const bucket = GLOBAL_BIGRAM_TO_SOURCE_KEYS.get(bi);
-      if (bucket) bucket.push(cacheKey);
-      else GLOBAL_BIGRAM_TO_SOURCE_KEYS.set(bi, [cacheKey]);
-    }
+    registerSourceInInvertedIndex(source);
   }
 
   return built;
 }
 
 /**
- * Incrementally registers cloud corpus sources into the O(1) inverted trigram/bigram index
- * in small non-blocking slices so browser UI stays at 60fps across 10,000+ references.
+ * Incrementally registers cloud corpus sources into the O(1) Tier-A FNV-1a inverted index
+ * in non-blocking slices so browser UI stays at 60fps across 30,000+ references.
  */
 export function prewarmInvertedIndexChunk(
   sources: CorpusSource[],
   startIdx: number,
-  chunkSize = 250
+  chunkSize = 1000
 ): number {
   const end = Math.min(sources.length, startIdx + chunkSize);
   for (let i = startIdx; i < end; i++) {
     const src = sources[i];
     const k = getSourceCacheKey(src);
     if (!INVERTED_INDEXED_KEYS.has(k)) {
-      getSourceIndex(src);
+      registerSourceInInvertedIndex(src);
     }
   }
   return end;
@@ -1424,58 +1491,63 @@ export function runManuscriptAudit(
     docBigrams.push(`${docTokens[i].word} ${docTokens[i + 1].word}`);
   }
 
-  // Ensure every source in combinedCorpus is registered in the O(1) inverted index once,
-  // then pre-filter candidates in O(L_doc) instead of O(N_corpus * L_doc) so 2,500+ refs run in milliseconds
-  const activeKeyToSource = new Map<string, CorpusSource>();
+  // Ensure every source in combinedCorpus is registered in the Tier-A FNV-1a inverted index once,
+  // then pre-filter candidates in O(L_doc) across 30,000+ sources
+  const activeSidToSource = new Map<number, CorpusSource>();
   for (const source of combinedCorpus) {
-    const k = getSourceCacheKey(source);
-    if (!INVERTED_INDEXED_KEYS.has(k)) {
-      getSourceIndex(source);
-    }
-    activeKeyToSource.set(k, source);
+    const sid = registerSourceInInvertedIndex(source);
+    activeSidToSource.set(sid, source);
   }
 
-  const candidateKeySet = new Set<string>();
-  const seenDocTrigrams = new Set<string>();
-  for (let i = 0; i < docTrigrams.length; i++) {
-    const tri = docTrigrams[i];
-    if (seenDocTrigrams.has(tri)) continue;
-    seenDocTrigrams.add(tri);
-    const bucket = GLOBAL_TRIGRAM_TO_SOURCE_KEYS.get(tri);
+  const candidateSidSet = new Set<number>();
+  const seenDocTriHashes = new Set<number>();
+  for (let i = 0; i <= docTokens.length - 3; i++) {
+    const h3 = fnv1aWordTriple(
+      docTokens[i].word,
+      docTokens[i + 1].word,
+      docTokens[i + 2].word
+    );
+    if (seenDocTriHashes.has(h3)) continue;
+    seenDocTriHashes.add(h3);
+    const bucket = GLOBAL_TRIGRAM_HASH_TO_SIDS.get(h3);
     if (bucket) {
       for (let b = 0; b < bucket.length; b++) {
-        if (activeKeyToSource.has(bucket[b])) {
-          candidateKeySet.add(bucket[b]);
+        const sid = bucket[b];
+        if (activeSidToSource.has(sid)) {
+          candidateSidSet.add(sid);
         }
       }
     }
   }
 
   // Also include sources sharing >= 3 distinct document bigrams (for colinear 2-gram patchwriting without 3-gram seeds)
-  const bigramHitCounts = new Map<string, number>();
-  const seenDocBigrams = new Set<string>();
-  for (let i = 0; i < docBigrams.length; i++) {
-    const bi = docBigrams[i];
-    if (seenDocBigrams.has(bi)) continue;
-    seenDocBigrams.add(bi);
-    const bucket = GLOBAL_BIGRAM_TO_SOURCE_KEYS.get(bi);
+  const bigramHitCounts = new Map<number, number>();
+  const seenDocBiHashes = new Set<number>();
+  for (let i = 0; i <= docTokens.length - 2; i++) {
+    const w0 = docTokens[i].word;
+    const w1 = docTokens[i + 1].word;
+    if (w0.length < 4 && w1.length < 4) continue;
+    const h2 = fnv1aWordPair(w0, w1);
+    if (seenDocBiHashes.has(h2)) continue;
+    seenDocBiHashes.add(h2);
+    const bucket = GLOBAL_BIGRAM_HASH_TO_SIDS.get(h2);
     if (bucket) {
       for (let b = 0; b < bucket.length; b++) {
-        const sk = bucket[b];
-        if (candidateKeySet.has(sk) || !activeKeyToSource.has(sk)) continue;
-        const c = (bigramHitCounts.get(sk) || 0) + 1;
+        const sid = bucket[b];
+        if (candidateSidSet.has(sid) || !activeSidToSource.has(sid)) continue;
+        const c = (bigramHitCounts.get(sid) || 0) + 1;
         if (c >= 3) {
-          candidateKeySet.add(sk);
+          candidateSidSet.add(sid);
         } else {
-          bigramHitCounts.set(sk, c);
+          bigramHitCounts.set(sid, c);
         }
       }
     }
   }
 
   const candidateSources: CorpusSource[] = [];
-  for (const sk of candidateKeySet) {
-    const src = activeKeyToSource.get(sk);
+  for (const sid of candidateSidSet) {
+    const src = activeSidToSource.get(sid);
     if (src) candidateSources.push(src);
   }
 

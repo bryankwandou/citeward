@@ -19,10 +19,12 @@ import {
 import { CorpusSource, SAMPLE_MANUSCRIPTS } from '@/lib/corpus';
 import { getHeadToHead20Samples } from '@/lib/head-to-head-benchmark';
 import {
+  crossVerifyDocumentVenues,
   loadVerifiedShardedCloudCorpus,
-  loadVerifiedWorldJournalsManifest,
+  loadVerifiedWorldJournalsShards,
   ShardVerificationResult,
   WorldJournalsManifest,
+  WorldJournalVenue,
 } from '@/lib/cloud-corpus-loader';
 import {
   createDocxBlobInBrowser,
@@ -163,6 +165,8 @@ export function FeedbackStudio() {
   } | null>(null);
   const [worldJournalsManifest, setWorldJournalsManifest] =
     useState<WorldJournalsManifest | null>(null);
+  const [worldVenues, setWorldVenues] = useState<WorldJournalVenue[]>([]);
+  const [loadingAllVenues, setLoadingAllVenues] = useState<boolean>(false);
   const refSeqRef = useRef(1);
   const [extraFetchedSources, setExtraFetchedSources] = useState<CorpusSource[]>([]);
   const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
@@ -220,17 +224,27 @@ export function FeedbackStudio() {
     } catch { }
   }, [allCalibrationSamples]);
 
-  // Hydrate all 4 gzipped GitHub cloud shards (10,000 refs) & World Journals manifest with SHA-256 verification (0ms Vercel CPU)
+  // Hydrate all 12 gzipped GitHub cloud shards (30,000 refs) & World Journals Shard 1 (top 44.7K venues + 268.6K manifest) directly from GitHub Raw (0ms Vercel CPU)
   useEffect(() => {
     let active = true;
-    loadVerifiedWorldJournalsManifest({ preferGitHubRaw: false })
+    loadVerifiedWorldJournalsShards({ preferGitHubRaw: true, maxShards: 1 })
       .then((res) => {
-        if (active && res.manifest) {
-          setWorldJournalsManifest(res.manifest);
-        }
+        if (!active) return;
+        if (res.manifest) setWorldJournalsManifest(res.manifest);
+        if (res.venues.length > 0) setWorldVenues(res.venues);
       })
       .catch(() => { });
-    loadVerifiedShardedCloudCorpus({ preferGitHubRaw: false })
+    loadVerifiedShardedCloudCorpus({
+      preferGitHubRaw: true,
+      onShardLoaded: (partial) => {
+        if (!active) return;
+        setCloudMeta({
+          origin: partial.origin,
+          verified: partial.allSha256Verified,
+          shards: partial.verifications,
+        });
+      },
+    })
       .then((res) => {
         if (!active || res.sources.length === 0) return;
         setCloudMeta({
@@ -241,9 +255,9 @@ export function FeedbackStudio() {
         let cursor = 0;
         const pump = () => {
           if (!active) return;
-          cursor = prewarmInvertedIndexChunk(res.sources, cursor, 400);
+          cursor = prewarmInvertedIndexChunk(res.sources, cursor, 1500);
           if (cursor < res.sources.length) {
-            setTimeout(pump, 12);
+            setTimeout(pump, 8);
           } else {
             setCloudSources(res.sources);
           }
@@ -255,6 +269,22 @@ export function FeedbackStudio() {
       active = false;
     };
   }, []);
+
+  const verifiedCitedVenues = useMemo(
+    () => crossVerifyDocumentVenues(text, worldVenues),
+    [text, worldVenues]
+  );
+
+  const handleLoadAllWorldVenues = async () => {
+    setLoadingAllVenues(true);
+    try {
+      const full = await loadVerifiedWorldJournalsShards({ preferGitHubRaw: true });
+      if (full.manifest) setWorldJournalsManifest(full.manifest);
+      if (full.venues.length > 0) setWorldVenues(full.venues);
+    } finally {
+      setLoadingAllVenues(false);
+    }
+  };
 
   // Deterministic set-union Turnitin audit (runs 100% in browser via O(L_doc) Inverted Index)
   const audit: IntegrityAuditResult = useMemo(() => {
@@ -836,6 +866,16 @@ export function FeedbackStudio() {
                 {worldJournalsManifest.totalVenues.toLocaleString()} World Journals ({worldJournalsManifest.coveragePercent}% GitHub)
               </Link>
             )}
+            {verifiedCitedVenues.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('filters')}
+                title="Cited ISSNs/venues verified against the GitHub World Journal Registry"
+                className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-good-wash)] text-[var(--cw-good)] border border-[var(--cw-good)]/30 font-semibold cursor-pointer hover:underline"
+              >
+                {verifiedCitedVenues.length} Cited Venues Verified
+              </button>
+            )}
             {cloudSources.length > 0 && (
               <span
                 title={
@@ -845,7 +885,7 @@ export function FeedbackStudio() {
                 }
                 className="cw-mono text-[11px] px-2.5 py-1 rounded-[4px] bg-[var(--cw-corpus-wash)] text-[var(--cw-corpus-ink)] font-semibold"
               >
-                {cloudSources.length.toLocaleString()} GitHub Refs · {cloudMeta?.verified ? 'SHA-256 OK' : 'Cloud'} · 0ms CPU
+                {cloudSources.length.toLocaleString()} GitHub Refs ({cloudMeta?.origin || 'github-raw'}) · {cloudMeta?.verified ? 'SHA-256 OK' : 'Cloud'} · 0ms CPU
               </span>
             )}
             {liveStats && liveStats.totalFetched > 0 && (
@@ -913,13 +953,22 @@ export function FeedbackStudio() {
               <span className="cw-mono text-xs font-bold uppercase tracking-wider text-[var(--cw-ink)]">
                 Submission Inbox ({inboxRows.length} Manuscripts)
               </span>
-              <a
-                href="/api/parse-document?sample=docx&id=sample-1-thesis"
-                download="citeward-sample-1-thesis.docx"
-                className="cw-mono text-xs font-semibold text-[var(--cw-signal-ink)] hover:underline"
+              <button
+                type="button"
+                onClick={() => {
+                  const s0 = SAMPLE_MANUSCRIPTS[0];
+                  const blob = createDocxBlobInBrowser(s0.title, s0.author, s0.text);
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'citeward-sample-1-thesis.docx';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="cw-mono text-xs font-semibold text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
               >
-                Download Sample .DOCX File
-              </a>
+                Download Sample .DOCX File (0ms CPU)
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
@@ -1718,6 +1767,54 @@ export function FeedbackStudio() {
                       ? '0 Flags (Clean)'
                       : `${manipFlags.homoglyphCount} Homoglyphs · ${manipFlags.zeroWidthCount} Zero-Width`}
                   </span>
+                </div>
+
+                {/* Layer 1 GitHub Worldwide Journal & Seminar Citation Verification */}
+                <div className="p-3.5 rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-paper)] space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="cw-mono text-[11px] font-bold uppercase text-[var(--cw-ink-2)]">
+                      Layer 1 · Cited Venues ({verifiedCitedVenues.length})
+                    </span>
+                    {worldJournalsManifest && worldVenues.length < worldJournalsManifest.totalVenues && (
+                      <button
+                        type="button"
+                        disabled={loadingAllVenues}
+                        onClick={handleLoadAllWorldVenues}
+                        className="cw-mono text-[10px] font-semibold text-[var(--cw-signal-ink)] hover:underline cursor-pointer"
+                      >
+                        {loadingAllVenues
+                          ? 'Loading All 268.6K...'
+                          : `Verify All ${worldJournalsManifest.totalVenues.toLocaleString()}`}
+                      </button>
+                    )}
+                  </div>
+                  {verifiedCitedVenues.length === 0 ? (
+                    <div className="text-[11px] text-[var(--cw-ink-3)]">
+                      No explicit ISSN or canonical journal/conference title matched against the loaded{' '}
+                      {worldVenues.length.toLocaleString()} GitHub venues yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
+                      {verifiedCitedVenues.map((m) => (
+                        <div
+                          key={m.venue.id}
+                          className="p-2 rounded-[6px] border border-[var(--cw-rule)] bg-[var(--cw-raised)] text-[11px] space-y-0.5"
+                        >
+                          <div className="font-semibold text-[var(--cw-ink)] flex items-center justify-between gap-2">
+                            <span className="truncate">{m.venue.displayName}</span>
+                            <span className="cw-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--cw-good-wash)] text-[var(--cw-good)] shrink-0">
+                              {m.matchReason === 'issn' ? `ISSN ${m.venue.issnL}` : m.venue.type.toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="cw-mono text-[10px] text-[var(--cw-ink-3)] truncate">
+                            {m.venue.publisher || 'Academic Publisher'}
+                            {m.venue.country ? ` · ${m.venue.country}` : ''} &middot;{' '}
+                            {m.venue.worksCount.toLocaleString()} works
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

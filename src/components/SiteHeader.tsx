@@ -40,7 +40,7 @@ export function SiteHeader() {
   const navItems = [
     { href: '/', label: 'Overview', exact: true },
     { href: '/studio', label: 'Turnitin Studio', exact: false },
-    { href: '/benchmark', label: '20x500 Benchmark', exact: false },
+    { href: '/benchmark', label: 'Benchmark & Registry', exact: false },
     { href: '/paraphrase', label: 'Paraphrase AI', exact: false },
     { href: '/matrix', label: 'Cohort Matrix', exact: false },
     { href: '/verify', label: 'Verify Receipt', exact: false },

@@ -16,6 +16,8 @@ import {
   SAMPLE_MANUSCRIPTS,
 } from '@/lib/corpus';
 import {
+  CloudCorpusManifest,
+  loadVerifiedCloudCorpusManifest,
   loadVerifiedWorldJournalsManifest,
   WorldJournalsManifest,
 } from '@/lib/cloud-corpus-loader';
@@ -35,12 +37,19 @@ export default function HomePage() {
   const [previewExcluded, setPreviewExcluded] = useState(true);
   const [journalsManifest, setJournalsManifest] =
     useState<WorldJournalsManifest | null>(null);
+  const [corpusManifest, setCorpusManifest] =
+    useState<CloudCorpusManifest | null>(null);
 
   useEffect(() => {
     let active = true;
-    loadVerifiedWorldJournalsManifest({ preferGitHubRaw: false })
+    loadVerifiedWorldJournalsManifest({ preferGitHubRaw: true })
       .then((res) => {
         if (active && res.manifest) setJournalsManifest(res.manifest);
+      })
+      .catch(() => {});
+    loadVerifiedCloudCorpusManifest({ preferGitHubRaw: true })
+      .then((res) => {
+        if (active && res.manifest) setCorpusManifest(res.manifest);
       })
       .catch(() => {});
     return () => {
@@ -50,10 +59,14 @@ export default function HomePage() {
 
   const venueCountLabel = journalsManifest
     ? journalsManifest.totalVenues.toLocaleString()
-    : '268,000+';
+    : '268,629';
   const venueCoverageLabel = journalsManifest
     ? `${journalsManifest.coveragePercent}%`
-    : '99.1%+';
+    : '100%';
+  const abstractCountLabel = corpusManifest
+    ? corpusManifest.totalReferences.toLocaleString()
+    : '30,000';
+  const abstractShardCount = corpusManifest ? corpusManifest.shardCount : 12;
 
   // 100% Real live calculation via runManuscriptAudit on Sample 01 against all 500 global references
   const livePreviewAudit = useMemo(() => {
@@ -95,7 +108,7 @@ export default function HomePage() {
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)]/95">
               <span className="cw-pulse-dot" />
               <span className="cw-mono text-[11px] font-semibold uppercase tracking-wider text-[var(--cw-ink-2)]">
-                {venueCountLabel} World Journals ({venueCoverageLabel} GitHub) &middot; 10,000 Ref Shards &middot; 0ms Vercel CPU
+                {venueCountLabel} World Journals ({venueCoverageLabel} GitHub) &middot; {abstractCountLabel} Abstracts &middot; 0ms Vercel CPU
               </span>
             </div>
 
@@ -108,9 +121,9 @@ export default function HomePage() {
 
             <p className="cw-lead text-[var(--cw-ink-2)] max-w-[54ch]">
               Upload a .PDF or .DOCX parsed 100% inside your browser, verify against{' '}
-              {venueCountLabel} worldwide journals and conference venues plus 10,000
-              SHA-256-verified full-abstract shards stored in GitHub and 10 live
-              federated scholarly APIs at zero Vercel Active CPU overhead.
+              {venueCountLabel} worldwide journals and conference venues plus{' '}
+              {abstractCountLabel} SHA-256-verified full-abstract shards fetched straight from
+              GitHub and 10 live federated scholarly APIs at zero Vercel Active CPU overhead.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2">
@@ -328,15 +341,16 @@ export default function HomePage() {
 
           <div className="cw-lift cw-reveal cw-d2 p-5 rounded-[10px] border border-[var(--cw-rule)] bg-[var(--cw-paper)] space-y-2">
             <div className="cw-mono text-xs font-bold text-[var(--cw-signal-ink)]">
-              02 · {venueCountLabel} World Venues &amp; 10K Shards
+              02 · {venueCountLabel} World Venues &amp; {abstractCountLabel} Abstracts
             </div>
             <h2 className="text-base font-semibold text-[var(--cw-ink)]">
               Multi-Layer SHA-256 GitHub Verification
             </h2>
             <p className="text-xs text-[var(--cw-ink-2)] leading-relaxed">
               Streams 6 global journal/seminar shards ({venueCoverageLabel} worldwide coverage)
-              plus 4 full-abstract shards (10,000 refs) verified via WebCrypto SHA-256
-              alongside 10 direct CORS scholarly APIs at 0ms Vercel Active CPU.
+              plus {abstractShardCount} full-abstract shards ({abstractCountLabel} refs) verified
+              via WebCrypto SHA-256 directly from GitHub Raw alongside 10 CORS scholarly APIs at
+              0ms Vercel Active CPU.
             </p>
           </div>
 

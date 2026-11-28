@@ -48,10 +48,13 @@ export default function DeckPage() {
   return (
     <div className="py-12 max-w-[1380px] mx-auto px-4 sm:px-6 space-y-12">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[var(--cw-rule)] pb-6">
+      <div className="cw-reveal flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-[var(--cw-rule)] pb-6">
         <div>
-          <div className="cw-kicker mb-2">
-            STARTUP VALIDATION · BRUTAL PRODUCT ROAST · ARCHITECTURE DECK
+          <div className="cw-kicker mb-2 flex flex-wrap items-center gap-2">
+            <span>ARCHITECTURE DECK &middot; FORMULA &amp; EMPIRICAL PARITY</span>
+            <span className="px-2 py-0.5 rounded-[4px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] text-[var(--cw-good)] font-semibold">
+              Citeward v2.0 &middot; 0ms Vercel CPU
+            </span>
           </div>
           <h1 className="cw-h1">Citeward Pitch Deck &amp; Technical Audit</h1>
           <p className="cw-lead mt-2">
@@ -65,11 +68,11 @@ export default function DeckPage() {
       </div>
 
       {/* Section 1: Brutal Product Roast & Engineering Solutions */}
-      <section className="space-y-4">
+      <section className="space-y-4 cw-reveal cw-d1">
         <div className="cw-kicker">01 · UNVARNISHED PRODUCT ROAST (/ROAST-MY-PRODUCT)</div>
         <h2 className="cw-h2">Why existing open-source clones fail—and how Citeward fixes them</h2>
 
-        <div className="overflow-x-auto rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)]">
+        <div className="cw-lift overflow-x-auto rounded-[10px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)]">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="border-b border-[var(--cw-rule-2)] bg-[var(--cw-sunken)] cw-mono text-xs uppercase text-[var(--cw-ink-3)]">
@@ -119,7 +122,7 @@ export default function DeckPage() {
                   Capability
                 </th>
                 <th scope="col" className="p-3.5 text-[var(--cw-corpus-ink)]">
-                  Citeward (OSS v1.4)
+                  Citeward v2.0 (Direct GitHub)
                 </th>
                 <th scope="col" className="p-3.5">
                   Turnitin Feedback Studio
@@ -160,7 +163,7 @@ export default function DeckPage() {
                   Live Scholarly API Indexing
                 </th>
                 <td className="p-3.5 font-semibold text-[var(--cw-good)]">
-                  Crossref + OpenAlex + Wikipedia Live
+                  268,629 World Journals (100% GitHub) + 30,000 Abstract Shards + 10 Direct CORS APIs
                 </td>
                 <td className="p-3.5">Closed Subscription Vault</td>
                 <td className="p-3.5">Local cohort batch only</td>
@@ -211,7 +214,7 @@ export default function DeckPage() {
             {BMC_BLOCKS.map((b) => (
               <div
                 key={b.title}
-                className="p-4 rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] space-y-1.5"
+                className="cw-lift p-4 rounded-[8px] border border-[var(--cw-rule-2)] bg-[var(--cw-raised)] space-y-1.5"
               >
                 <h3 className="font-semibold text-sm text-[var(--cw-ink)]">{b.title}</h3>
                 <p className="text-xs text-[var(--cw-ink-2)] leading-relaxed">{b.body}</p>
